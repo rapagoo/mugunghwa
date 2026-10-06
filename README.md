@@ -5,6 +5,7 @@ Pi의 기존 `game` 코드와 Jetson의 TCP·영상 예제를 기준으로 시�
 수업 참고 코드 `lecturecode`는 저장소에 포함하지 않습니다.
 담당 범위와 Git 사용 흐름은 [저장소 관리](docs/repository.md)를 참고하세요.
 장비별 작업 폴더와 실행 환경: [Pi](docs/setup-pi.md), [Jetson](docs/setup-jetson.md).
+[STM32 Wi-Fi 연결 직후 수신 확인](docs/stm-wifi-test.md).
 
 ## 구성
 
