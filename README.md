@@ -29,50 +29,28 @@ make -C pi/controller
 make -C pi/bluetooth
 ```
 
-## 수동 통신 테스트
+## COUNT 통신 테스트
 
-1. `pi/server/idpasswd.example.txt`를 같은 폴더의 `idpasswd.txt`로 복사하고 테스트 ID를 확인합니다. 실제 설정 파일은 Git에서 제외합니다. `pi/server` 폴더에서 `./iot_server 5000` 실행. 서버는 현재 작업 폴더의 `idpasswd.txt`를 읽습니다.
-2. 별도 터미널의 `pi/controller` 폴더에서 `./iot_client 127.0.0.1 5000 PI` 실행.
-3. `pi/bluetooth/bluetooth_client.c`의 `dest`를 실제 Arduino Bluetooth 모듈 MAC 주소로 맞춘 뒤 다시 빌드.
-4. Arduino에 진단 스케치를 업로드.
-5. 별도 터미널의 `pi/bluetooth` 폴더에서 `./bluetooth_client 127.0.0.1 5000 ARD` 실행.
-
-Pi 제어 클라이언트는 `PI`, Arduino를 대표하는 Bluetooth 중계 클라이언트는 `ARD`로 로그인합니다.
-현재 C 클라이언트와 예제 설정의 로그인 비밀번호는 수업 코드의 테스트 값 `PASSWD`를 사용합니다. 기존 장비의 실제 등록 파일은 저장소에 포함하지 않았습니다.
-서버를 다른 장치에서 실행한다면 `127.0.0.1` 대신 해당 서버의 LAN IP를 사용합니다.
-
-Pi 클라이언트에서 `[ARD]COUNT@4@2@1`을 입력하고 Enter를 누르면 Arduino 시리얼 모니터에 `[PI]COUNT@4@2@1`이 나타나야 합니다.
-진단 스케치는 기동 후 약 2초 간격으로 `[PI]DIAG@PING`을 총 5회 전송합니다. Bluetooth 연결 전에 전송 횟수가 소진되면 연결 후 Arduino를 리셋하세요.
-
-현재 스케치는 수신 문자열 출력까지만 수행합니다. `COUNT`의 LCD 적용 및 응답은 다음 개발 단계입니다.
-
-## 3초 간격 LCD 카운트 전송
-
-서버와 Bluetooth 중계(`ARD`)를 실행한 뒤, 수동 `PI` 클라이언트를 종료하고 같은 클라이언트의 자동 전송 옵션을 사용합니다.
+Pi에서 `pi/server` 폴더의 `./iot_server 5000`을 실행합니다.
+로그인 설정은 `idpasswd.example.txt`를 참고하여 실제 `idpasswd.txt`로 준비합니다.
+Jetson에서는 다음 명령을 사용합니다. 이미 실행 중이면 중복 실행하지 마세요.
 
 ```bash
-cd pi/controller
-./iot_client 127.0.0.1 5000 PI --lcd-demo
+make -C jetson/tcp_client
+./jetson/tcp_client/iot_client 10.10.16.90 5000 JETSON --lcd-demo
 ```
 
-인증 완료 후 즉시 첫 메시지를 보내고 이후 3초 간격으로 다음 누적값을 반복합니다.
-
-```text
-[ARD]COUNT@1@0@0
-[ARD]COUNT@2@1@0
-[ARD]COUNT@3@1@1
-[ARD]COUNT@4@2@1
-[ARD]COUNT@3@1@1
-[ARD]COUNT@2@1@0
-```
-
-숫자는 총인원·성공·실패 순서입니다. 감소는 표시 갱신 확인용 가상 데이터입니다.
-Arduino는 헤더가 `[PI]`로 바뀐 메시지를 받으며, `[PI]APPLIED@COUNT@...`로 응답하면 Pi 터미널에 출력됩니다.
-`RESET`, `RUN`, `STOP`은 자동으로 보내지 않습니다. 종료는 Ctrl+C를 사용합니다.
-Bluetooth 연결·LCD 적용은 실제 장치에서 확인해야 합니다.
+Jetson 목적지는 PI로 고정됩니다. Pi 서버가 가상 COUNT를 검사해
+ARD·STM 모두에 `[PI]COUNT`로 전달합니다. MCU 응답 목적지도 PI입니다.
+Arduino는 Pi의 Bluetooth 중계가 ARD로 로그인해야 합니다.
+STM32는 ESP-01 TCP 연결 뒤 STM으로 로그인합니다.
+가상 데이터는 3초 간격의 기존 여섯 패턴이며 카메라 결과가 아닙니다.
+RUN/STOP/RESET은 보내지 않습니다.
+[연결·수신·로그 확인](docs/stm-wifi-test.md)을 참고하세요.
 
 ## 현재 제한
 
-수업 소스의 메시지 파서와 연결 처리는 그대로 복사했습니다. 부분 수신·여러 줄 수신·길이 초과·부분 송신 처리는 추가 개선이 필요합니다.
-서버가 `:`를 구분자로 사용하므로 숫자 데이터를 보내고 LCD 문구는 MCU에서 구성합니다.
-서버 로그인 알림도 Bluetooth로 전달되므로 MCU의 명령 파서는 로그인 알림을 명령으로 실행하지 않아야 합니다.
+현재 COUNT 처리는 통신 시험용이며 게임 상태 판단은 구현 전입니다.
+서버는 인증 후 LF 단위로 메시지를 누적하고 여러 줄·초과 길이를 처리합니다.
+로그인 프레임의 분할 수신, 부분 송신, 장애 복구는 후속 개선 대상입니다.
+MCU는 로그인 알림과 명령을 구분해야 합니다.

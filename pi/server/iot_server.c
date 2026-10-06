@@ -43,6 +43,7 @@ void send_msg(MSG_INFO * msg_info, CLIENT_INFO * first_client_info);
 void error_handling(char * msg);
 void log_file(char * msgstr);
 void getlocaltime(char * buf);
+void route_line(char *line, CLIENT_INFO *client, CLIENT_INFO *first);
 
 int clnt_cnt=0;
 pthread_mutex_t mutx;
@@ -218,13 +219,11 @@ void * clnt_connection(void *arg)
 		int str_len = 0;
 		int index = client_info->index;
 		char msg[BUF_SIZE];
-		char to_msg[MAX_CLNT*ID_SIZE+1];
-		int i=0;
-		char *pToken;
-		char *pArray[ARR_CNT]={0};
+		char line[BUF_SIZE];
+		size_t used = 0;
+		int dropping = 0;
 		char strBuff[BUF_SIZE*2]={0};
 
-		MSG_INFO msg_info;
 		CLIENT_INFO  * first_client_info;
 
 		first_client_info = (CLIENT_INFO *)((void *)client_info - (void *)( sizeof(CLIENT_INFO) * index ));
@@ -235,27 +234,24 @@ void * clnt_connection(void *arg)
 				if(str_len <= 0)
 						break;
 
-				msg[str_len] = '\0';
-				pToken = strtok(msg,"[:]");
-				i = 0; 
-				while(pToken != NULL)
-				{
-						pArray[i] =  pToken;
-						if(i++ >= ARR_CNT)
-								break;	
-						pToken = strtok(NULL,"[:]");
+				for(int n = 0; n < str_len; n++) {
+					if(msg[n] == '\r') continue;
+					if(dropping) {
+						if(msg[n] == '\n') dropping = 0;
+						continue;
+					}
+					if(msg[n] == '\0' || used >= sizeof(line) - 1) {
+						used = 0;
+						dropping = msg[n] != '\n';
+						continue;
+					}
+					line[used++] = msg[n];
+					if(msg[n] == '\n') {
+						line[used] = '\0';
+						route_line(line, client_info, first_client_info);
+						used = 0;
+					}
 				}
-
-				msg_info.fd = client_info->fd;
-				msg_info.from = client_info->id;
-				msg_info.to = pArray[0];
-				sprintf(to_msg,"[%s]%s",msg_info.from,pArray[1]);
-				msg_info.msg = to_msg;
-				msg_info.len = strlen(to_msg);
-
-				sprintf(strBuff,"msg : [%s->%s] %s",msg_info.from,msg_info.to,pArray[1]);
-				log_file(strBuff);
-				send_msg(&msg_info, first_client_info);
 		}
 
 		close(client_info->fd);
@@ -269,6 +265,62 @@ void * clnt_connection(void *arg)
 		pthread_mutex_unlock(&mutx);
 
 		return 0;
+}
+
+static int valid_counts(const char *text)
+{
+	unsigned total, success, failure;
+	char end;
+	return strspn(text, "0123456789@\n") == strlen(text) &&
+		sscanf(text, "%2u@%2u@%2u%c", &total, &success, &failure, &end) == 4 &&
+		end == '\n' && total <= 99 && success + failure <= total;
+}
+
+void route_line(char *line, CLIENT_INFO *client, CLIENT_INFO *first)
+{
+	char *closing = strchr(line, ']');
+	char outgoing[MAX_CLNT * ID_SIZE + 1];
+	char logbuf[BUF_SIZE * 2];
+	if(line[0] != '[' || !closing) return;
+	*closing = '\0';
+	char *target = line + 1;
+	char *payload = closing + 1;
+	if(!*target || strlen(target) >= ID_SIZE ||
+	   strspn(target, "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_") != strlen(target)) return;
+	MSG_INFO info = {client->fd, client->id, target, outgoing, 0};
+	if(!strcmp(client->id, "JETSON") && !strcmp(target, "PI")) {
+		if(strncmp(payload, "COUNT@", 6) || !valid_counts(payload + 6)) {
+			log_file("Ignored invalid JETSON COUNT for PI\n");
+			return;
+		}
+		info.from = "PI";
+		snprintf(outgoing, sizeof(outgoing), "[PI]%s", payload);
+		info.len = strlen(outgoing);
+		const char *targets[] = {"ARD", "STM"};
+		for(int i = 0; i < 2; i++) {
+			info.to = (char *)targets[i];
+			snprintf(logbuf, sizeof(logbuf), "test : [JETSON->PI->%s] %s", targets[i], payload);
+			log_file(logbuf);
+			send_msg(&info, first);
+		}
+		return;
+	}
+	if((!strcmp(client->id, "STM") || !strcmp(client->id, "ARD")) &&
+	   !strcmp(target, "PI") && !strncmp(payload, "APPLIED@COUNT@", 14) && valid_counts(payload + 14)) {
+		info.from = "PI";
+		info.to = "JETSON";
+		snprintf(outgoing, sizeof(outgoing), "[PI]%s", payload);
+		info.len = strlen(outgoing);
+		snprintf(logbuf, sizeof(logbuf), "reply : [%s->PI->JETSON] %s", client->id, payload);
+		log_file(logbuf);
+		send_msg(&info, first);
+		return;
+	}
+	snprintf(outgoing, sizeof(outgoing), "[%s]%s", info.from, payload);
+	info.len = strlen(outgoing);
+	snprintf(logbuf, sizeof(logbuf), "msg : [%s->%s] %s", info.from, info.to, payload);
+	log_file(logbuf);
+	send_msg(&info, first);
 }
 
 void send_msg(MSG_INFO * msg_info, CLIENT_INFO * first_client_info)

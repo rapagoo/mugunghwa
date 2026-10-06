@@ -24,7 +24,7 @@ void send_all(int sock, const char *data, size_t length);
 
 char name[NAME_SIZE]="[Default]";
 char msg[BUF_SIZE];
-const char *demo_target = "ARD";
+const char *demo_target = "PI";
 long demo_cycles = 0;
 
 int main(int argc, char *argv[])
@@ -33,21 +33,15 @@ int main(int argc, char *argv[])
 	struct sockaddr_in serv_addr;
 	pthread_t snd_thread, rcv_thread;
 	void * thread_return;
-	int demo = 0, target_set = 0;
+	int demo = 0;
 
 	if(argc < 4) {
-		printf("Usage : %s <IP> <port> <name> [--lcd-demo] [--target ID] [--cycles N]\n",argv[0]);
+		printf("Usage : %s <IP> <port> <name> [--lcd-demo] [--cycles N]\n",argv[0]);
 		exit(1);
 	}
 	for(int i = 4; i < argc; i++) {
 		if(!strcmp(argv[i], "--lcd-demo")) demo = 1;
-		else if(!strcmp(argv[i], "--target") && i + 1 < argc) {
-			demo_target = argv[++i];
-			target_set = 1;
-			if(!*demo_target || strlen(demo_target) >= NAME_SIZE ||
-			   strspn(demo_target, "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_") != strlen(demo_target))
-				error_handling("invalid target ID");
-		} else if(!strcmp(argv[i], "--cycles") && i + 1 < argc) {
+		else if(!strcmp(argv[i], "--cycles") && i + 1 < argc) {
 			char *end;
 			errno = 0;
 			demo_cycles = strtol(argv[++i], &end, 10);
@@ -55,8 +49,8 @@ int main(int argc, char *argv[])
 				error_handling("cycles must be a positive integer");
 		} else error_handling("unknown or incomplete option");
 	}
-	if(!demo && (demo_cycles || target_set))
-		error_handling("--target and --cycles require --lcd-demo");
+	if(!demo && demo_cycles)
+		error_handling("--cycles requires --lcd-demo");
 
 	if(!*argv[3] || strlen(argv[3]) >= 10 ||
 	   strspn(argv[3], "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_") != strlen(argv[3]))
@@ -186,7 +180,7 @@ void * send_msg(void * arg)
 	FD_ZERO(&initset);
 	FD_SET(STDIN_FILENO, &initset);
 
-	fputs("Input a message! [ID]msg (Default ID:ALLMSG)\n",stdout);
+	fputs("Input a message for PI (or quit).\n",stdout);
 	while(1) {
 		memset(msg,0,sizeof(msg));
 		name_msg[0] = '\0';
@@ -203,11 +197,16 @@ void * send_msg(void * arg)
 			}
 			else if(msg[0] != '[')
 			{
-				strcat(name_msg,"[ALLMSG]");
+				strcat(name_msg,"[PI]");
 				strcat(name_msg,msg);
 			}
-			else
+			else {
+				if(strncmp(msg, "[PI]", 4)) {
+					fputs("Only PI is allowed as destination.\n", stdout);
+					continue;
+				}
 				strcpy(name_msg,msg);
+			}
 			if(write(*sock, name_msg, strlen(name_msg))<=0)
 			{
 				*sock = -1;

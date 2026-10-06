@@ -1,24 +1,32 @@
-# STM32 Wi-Fi 수신 확인
-
-팀원 전달용 TCP 설정:
+# STM32 Wi-Fi와 Arduino COUNT 수신 시험
 
 | 항목 | 값 |
 |---|---|
-| TCP 서버 | `10.10.16.90` |
-| 포트 | `5000` |
-| 로그인 ID | `STM` (대문자) |
-| 테스트 비밀번호 | `PASSWD` |
-| 로그인 데이터 | `[STM:PASSWD]` (LF 없음) |
+| Pi TCP 서버 | `10.10.16.90:5000` |
+| STM32 로그인 | `[STM:PASSWD]` (LF 없음) |
+| Arduino 대표 TCP ID | `ARD` (Pi Bluetooth 중계 프로그램이 로그인) |
+| Jetson 로그인 ID | `JETSON` |
 
-ESP-01이 Pi와 통신 가능한 LAN에 연결된 뒤 TCP 연결을 열고 로그인 데이터를 송신합니다.
-SSID와 Wi-Fi 비밀번호는 현장 네트워크 설정을 사용합니다.
-로그인 성공 응답은 `[STM] New connected! ...\n`이며 게임 명령으로 처리하지 않습니다.
+STM32는 ESP-01을 같은 LAN에 연결하고 TCP 연결 뒤 로그인합니다.
+SSID와 Wi-Fi 비밀번호는 현장 설정을 사용합니다.
+`[STM] New connected! ...\n`은 로그인 알림이며 명령으로 처리하지 않습니다.
 
-## 연결 직후 확인할 데이터
+## 현재 전송 경로
 
-Jetson의 `JETSON` 클라이언트가 Pi 제어 클라이언트에 가상값을 3초 간격으로 보냅니다.
-Pi 제어 클라이언트는 값을 검사하고 STM32에 새 명령을 보냅니다.
-STM32에서 수신하는 실제 게임 문자열은 다음과 같습니다.
+```text
+Jetson → Pi 서버: [PI]COUNT@4@2@1\n
+Pi 서버 → STM32: [PI]COUNT@4@2@1\n
+Pi 서버 → Arduino 중계: [PI]COUNT@4@2@1\n
+STM32/Arduino → Pi 서버: [PI]APPLIED@COUNT@4@2@1\n
+Pi 서버 → Jetson: [PI]APPLIED@COUNT@4@2@1\n
+```
+
+Jetson은 MCU를 선택하지 않습니다. Pi 서버가 ARD와 STM 모두에 전달합니다.
+MCU는 `[PI]` 명령을 처리하고 응답 목적지도 PI로 통일합니다.
+별도 Pi 제어 클라이언트 없이 현재 서버의 테스트 처리로 동작합니다.
+실제 경기 제어는 별도로 구현해야 합니다.
+
+3초 간격으로 다음 가상값을 반복합니다. 각 줄 끝에는 실제 LF(`0x0A`)가 있습니다.
 
 ```text
 [PI]COUNT@1@0@0
@@ -29,59 +37,27 @@ STM32에서 수신하는 실제 게임 문자열은 다음과 같습니다.
 [PI]COUNT@2@1@0
 ```
 
-각 줄 끝에는 실제 LF 바이트 `0x0A`가 있습니다. 숫자는 총인원·성공·실패 순서입니다.
-감소하는 값은 LCD 갱신 시험용입니다. 이 값들은 카메라 결과가 아닙니다.
-STM32 연결 전에 보내진 값은 보관하지 않지만, 로그인 후 다음 전송부터 최대 약 3초 안에 받습니다.
+총인원·성공·실패 순서이며 감소값은 LCD 갱신 시험용입니다. 카메라 결과가 아닙니다.
+로그인 후 다음 전송부터 최대 약 3초 안에 수신합니다. 과거 값은 재전송하지 않습니다.
 RUN/STOP/RESET이나 서보·LED 동작 명령은 보내지 않습니다.
+UART에서 문자열을 확인하고 LCD 구현 후 적용 응답을 보내세요.
+ESP-01 `+IPD`·AT 응답을 분리하고 LF 단위로 명령을 파싱해야 합니다.
 
-먼저 UART 수신 출력으로 위 문자열을 확인하고 LCD 구현 후 표시 적용을 확인합니다.
-LCD 적용 후 다음과 같이 응답하면 Jetson 로그에서 왕복 통신을 확인할 수 있습니다.
-
-```text
-[PI]APPLIED@COUNT@1@0@0
-```
-
-응답 끝에도 LF를 붙입니다. Pi는 `[STM]APPLIED@COUNT@1@0@0`을 받습니다.
-Pi가 테스트 응답을 Jetson에 전달하면 Jetson은 `[PI]APPLIED@COUNT@1@0@0`을 받습니다.
-아직 LCD를 구현하지 않았다면 수신 확인만 먼저 진행해도 됩니다.
-ESP-01의 `+IPD` 헤더·AT 응답을 분리하고 TCP/UART 조각을 누적해 LF 단위로 파싱합니다.
-STM32와 Arduino는 `[PI]` 발신자의 명령을 처리하고 응답 목적지도 `PI`로 통일합니다.
-
-## 현재 실행과 로그
-
-Pi 서버 작업 폴더: `/home/pi/Projects/mugunghwa/repo/pi/server`
-
-Jetson 테스트 명령:
+## 실행과 로그
 
 ```bash
+# Jetson (기존 프로세스 실행 중이면 중복 실행 금지)
 cd /home/jetson/projects/mugunghwa/repo
-./jetson/tcp_client/iot_client 10.10.16.90 5000 JETSON --lcd-demo --target PI
-```
-
-Pi 제어 클라이언트 명령 (Pi 서버와 함께 실행):
-
-```bash
-cd /home/pi/Projects/mugunghwa/repo
-python3 pi/controller/count_relay.py --target STM
-```
-
-Arduino로 바꿔 시험할 때는 Pi 제어 클라이언트의 `--target ARD`와 Bluetooth 중계가 필요합니다.
-`count_relay.py`는 COUNT 검사·명령 전달·응답 확인용이며 경기 상태 판단은 아직 구현하지 않았습니다.
-
-준비된 백그라운드 프로세스의 로그:
-
-```bash
-# Pi
+./jetson/tcp_client/iot_client 10.10.16.90 5000 JETSON --lcd-demo
+# Pi 서버 로그
 tail -f /home/pi/Projects/mugunghwa/repo/.runtime/stm-server.log
-# Pi 제어 클라이언트
-tail -f /home/pi/Projects/mugunghwa/repo/.runtime/pi-count-relay.log
-# Jetson
+# Jetson 송신·응답 로그
 tail -f /home/jetson/projects/mugunghwa/repo/.runtime/stm-client.log
+# Arduino Bluetooth 중계 로그
+tail -f /home/pi/Projects/mugunghwa/repo/.runtime/arduino-bridge.log
 ```
 
-Pi에서 `New connected`의 ID가 STM인지 확인합니다.
-Jetson의 `TX`는 송신만 의미하며 STM32 수신 성공은 UART 출력 또는 응답으로 확인해야 합니다.
-각 PID는 같은 `.runtime` 폴더의 `stm-server.pid`, `pi-count-relay.pid`, `stm-client.pid`에 기록합니다.
-백그라운드 실행은 재부팅 후 자동 시작하지 않습니다.
-새 프로세스를 실행하기 전에 기존 PID가 실행 중인지 확인해 중복 로그인을 피합니다.
-실제 STM32·ESP-01 수신은 팀원 연결 완료 후 확인합니다.
+`test : [JETSON->PI->STM]` 또는 ARD 로그는 전달 시도입니다.
+실제 수신은 MCU UART 출력 또는 `reply : [STM->PI->JETSON]` 응답으로 확인합니다.
+PID는 `.runtime/stm-server.pid`, `stm-client.pid`, `arduino-bridge.pid`에 기록합니다.
+재부팅 후 자동 실행하지 않습니다. STM32·ESP-01·LCD 수신은 연결 후 검증합니다.
