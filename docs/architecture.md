@@ -6,6 +6,7 @@
 |---|---|---|
 | `pi/server/iot_server` | Pi, TCP 서버 | 로그인·연결·LF 프레임·목적지 중계 |
 | `jetson/count_test_client.py` | Jetson, JETSON | 가상 COUNT를 PI로만 송신 |
+| `jetson/vision_client.py` | Jetson, JETSON | 사람 검출·임시 추적 ID·발 위치를 PI로 송신 |
 | `pi/controller/iot_client` (C) | Pi, PI | 값 검사·ARD/STM 명령 생성·응답 확인 |
 | Bluetooth 중계 | Pi, ARD | Arduino UART/Bluetooth와 TCP 연결 |
 | 팀원 STM32 펌웨어 | STM32+ESP-01, STM | PI 명령 실행·PI로 응답 |
@@ -36,7 +37,9 @@ Jetson Python에는 검출·참가자 추적·움직임/도착 후보 생성을 
 Pi 제어 프로그램에는 경기 상태·최종 판정·음성·시간표·DB 기능을 추가합니다.
 서버는 중계 역할을 유지하고 MCU는 장치 동작과 응답을 담당합니다.
 현재 가상 COUNT는 실제 영상 후보가 아니며 경기 상태 판단은 구현하지 않았습니다.
-실물 통신 확인 후 같은 경로에 게임 메시지를 추가합니다.
+STM32 연결 준비와 병행해 같은 경로에 영상 관측 메시지를 추가했습니다.
+현재 영상 관측은 Pi에 기록하고 수신 확인만 반환하며 MCU에 전달하지 않습니다.
+[Jetson 개발 단계와 실행 방법](jetson-development.md)을 참고하세요.
 
 ## 검증 상태
 
@@ -44,9 +47,10 @@ Pi 제어 프로그램에는 경기 상태·최종 판정·음성·시간표·DB
 - C 제어 소스는 `-Wall -Wextra -Werror` 빌드 통과.
 - 두 MCU의 발신자 헤더 PI, 응답 목적지 PI 확인.
 - 잘못된 COUNT 차단, TCP 분할·여러 줄 수신 통과.
-- 실제 Arduino Bluetooth는 최근 시도에서 `Host is down`; 실물 수신 미확인.
+- 실제 Arduino는 사용자가 재연결 후 정상 동작을 확인했습니다. 실물 APPLIED 응답은 별도 검증 필요.
 - STM32 ESP-01·LCD는 팀원 연결 완료 후 검증 필요.
-- 웹캠/GPU 추론은 별도 검사 완료, 통신 테스트에 영상값은 아직 연결하지 않음.
+- 영상 관측 ACK·잘못된 필드 차단·MCU 미전달 통합 검사 통과.
+- 실제 Jetson 웹캠 30프레임 사람 1명 추적·Pi 관측 28회 ACK 확인. 게임 판정은 아직 미구현.
 
 Pi에서 통합 검사를 다시 실행하려면:
 

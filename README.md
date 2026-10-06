@@ -7,17 +7,19 @@ Pi의 기존 `game` 코드와 Jetson의 TCP·영상 예제를 기준으로 시�
 장비별 작업 폴더와 실행 환경: [Pi](docs/setup-pi.md), [Jetson](docs/setup-jetson.md).
 [STM32 Wi-Fi 연결 직후 수신 확인](docs/stm-wifi-test.md).
 [통신·게임 책임 분리와 검증 상태](docs/architecture.md).
+[Jetson 웹캠 검출·추적 개발](docs/jetson-development.md).
 
 ## 구성
 
 - `pi/server`: TCP 메시지 중계 서버와 로그인 ID 설정.
 - `pi/bluetooth`: Arduino Bluetooth ↔ TCP 중계 프로그램.
-- `pi/controller`: 수동 메시지 테스트용 C 클라이언트. 자동 게임 제어는 아직 미구현.
+- `pi/controller`: COUNT 시험 중계·영상 관측 수신용 C 클라이언트. 게임 판정은 아직 미구현.
 - `tools/tcp_client`: Pi·Jetson 공용 TCP 진단 소스. [STM 연결 시험](tools/tcp_client/README.md).
 - `jetson/tcp_client`: 공용 소스를 Jetson에서 빌드하는 위치.
 - `arduino/bluetooth_uart_test`: Bluetooth 진단용 스케치. LCD·타이머·자동 응답은 아직 미구현.
 - `stm32`: STM32 펌웨어 추가 위치.
 - `jetson/examples`: 기존 TCP·YOLO 인원 검출 예제. 게임 통합은 아직 미구현.
+- `jetson/vision_client.py`: YOLO·ByteTrack 웹캠 관측을 PI로 전송하는 Python 클라이언트.
 - `docs/protocol.md`: 주소 규칙과 LCD 테스트 메시지 합의안.
 
 ## Pi에서 빌드

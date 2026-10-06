@@ -38,6 +38,21 @@ def main():
             ard, ard_stream = login(args.port, 'ARD')
             jetson, jetson_stream = login(args.port, 'JETSON')
             with stm, ard, jetson:
+                # Camera snapshots belong to PI, never the LCD/MCU command stream.
+                jetson.sendall(b'[PI]POSITION@abcdef12@1@7@500@900\n'
+                               b'[PI]VISION@abcdef12@1@1@1\n')
+                assert jetson_stream.readline() == b'[PI]VISION_ACK@abcdef12@1\n'
+                for invalid in (b'VISION@abcdef12@2@0@1', b'VISION@abcdef12@0@1@1',
+                                b'VISION@abcdef12@2147483648@1@1',
+                                b'VISION@abcdef12@2@1000@1', b'VISION@bad@2@1@1',
+                                b'VISION@abcdef12@2@1@1@extra'):
+                    jetson.sendall(b'[PI]' + invalid + b'\n')
+                    jetson.settimeout(0.1)
+                    try:
+                        raise AssertionError('Invalid observation acknowledged: ' + repr(jetson.recv(1)))
+                    except socket.timeout:
+                        pass
+                    jetson.settimeout(3)
                 jetson.sendall(b'[PI]COUNT@1@2@0\n')
                 for conn in (stm, ard):
                     conn.settimeout(0.2)
@@ -72,7 +87,7 @@ def main():
                 assert sender.returncode == 0, output
                 assert output.count('RX: [PI]APPLIED@COUNT@1@0@0') == 2, output
                 print(output, end='')
-                print('PASS: Python sender, C PI controller, both MCU replies, invalid/split/batch frames')
+                print('PASS: observations/validation/no MCU fanout, Python sender, C PI, both MCU replies, split/batch')
         finally:
             for proc in (sender, controller, server):
                 if proc is not None and proc.poll() is None:

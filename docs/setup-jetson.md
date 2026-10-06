@@ -32,3 +32,7 @@ make -C jetson/tcp_client
 현재 통신 송신기는 C 실행 파일 대신 `python3 jetson/count_test_client.py`입니다.
 표준 라이브러리만 사용하며 가상 COUNT를 PI로 보내고 응답을 출력합니다.
 YOLO용 가상환경은 영상 검사 시 사용합니다. 현재 가상 COUNT와 영상 처리는 분리되어 있습니다.
+
+실제 웹캠 관측 송신기는 `jetson/vision_client.py`입니다.
+[실행 방법·관측 메시지·개발 단계](jetson-development.md)를 참고하세요.
+기존 YOLO 환경에 ByteTrack용 `lapx==0.5.12`를 추가했습니다.

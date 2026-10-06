@@ -1,0 +1,2 @@
+# Add only to the existing compatible YOLO environment; do not upgrade torch/numpy.
+lapx==0.5.12

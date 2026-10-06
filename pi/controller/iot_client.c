@@ -1,4 +1,4 @@
-/* PI controller: Jetson COUNT -> MCU commands, MCU APPLIED -> Jetson.
+/* PI controller: Jetson observations -> PI, COUNT -> MCU, APPLIED -> Jetson.
  * Test controller only; game state decisions are not implemented yet. */
 #include <stdio.h>
 #include <stdlib.h>
@@ -82,6 +82,45 @@ static void remember(int target, const int counts[3], double now)
     pending[slot].order = ++order;
 }
 
+/* Experimental camera observations. No game decisions or MCU commands here. */
+static int observation(int sock, const char *payload)
+{
+    int summary = !strncmp(payload, "VISION@", 7);
+    if(!summary && strncmp(payload, "POSITION@", 9)) return 0;
+    const char *p = payload + (summary ? 7 : 9);
+    char boot[9];
+    for(int i = 0; i < 8; i++) {
+        if(!((*p >= '0' && *p <= '9') || (*p >= 'a' && *p <= 'f'))) return 0;
+        boot[i] = *p++;
+    }
+    boot[8] = '\0';
+    if(*p++ != '@') return 0;
+    unsigned long values[4] = {0};
+    int fields = summary ? 3 : 4;
+    for(int i = 0; i < fields; i++) {
+        unsigned long limit = i == 0 || (!summary && i == 1) ? 2147483647UL :
+                              summary ? 999UL : 1000UL;
+        int digits = 0;
+        while(*p >= '0' && *p <= '9') {
+            unsigned long digit = (unsigned long)(*p++ - '0');
+            if(++digits > 10 || values[i] > (limit - digit) / 10) return 0;
+            values[i] = values[i] * 10 + digit;
+            if(values[i] > limit) return 0;
+        }
+        if(!digits) return 0;
+        if(i < fields - 1) { if(*p++ != '@') return 0; }
+        else if(*p) return 0;
+    }
+    if(!values[0] || (summary ? values[2] > values[1] : !values[1])) return 0;
+    printf("OBSERVATION [JETSON]%s\n", payload);
+    if(summary) {
+        char outgoing[LINE_SIZE];
+        snprintf(outgoing, sizeof(outgoing), "[JETSON]VISION_ACK@%s@%lu\n", boot, values[0]);
+        send_all(sock, outgoing);
+    }
+    return 1;
+}
+
 static void handle_line(int sock, char *line, int target_mask)
 {
     char *closing = strchr(line, ']');
@@ -92,6 +131,7 @@ static void handle_line(int sock, char *line, int target_mask)
     double now = monotonic_seconds();
     for(int i = 0; i < PENDING_SIZE; i++)
         if(pending[i].active && now - pending[i].sent_at > 30) pending[i].active = 0;
+    if(!strcmp(sender, "JETSON") && observation(sock, payload)) return;
     if(!strcmp(sender, "JETSON") && parse_counts(payload, "COUNT@", counts)) {
         for(int target = 0; target < 2; target++) {
             if(!(target_mask & (1 << target))) continue;
