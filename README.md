@@ -11,6 +11,8 @@ Pi의 기존 `game` 코드와 Jetson의 TCP·영상 예제를 기준으로 시�
 - `pi/server`: TCP 메시지 중계 서버와 로그인 ID 설정.
 - `pi/bluetooth`: Arduino Bluetooth ↔ TCP 중계 프로그램.
 - `pi/controller`: 수동 메시지 테스트용 C 클라이언트. 자동 게임 제어는 아직 미구현.
+- `tools/tcp_client`: Pi·Jetson 공용 TCP 진단 소스. [STM 연결 시험](tools/tcp_client/README.md).
+- `jetson/tcp_client`: 공용 소스를 Jetson에서 빌드하는 위치.
 - `arduino/bluetooth_uart_test`: Bluetooth 진단용 스케치. LCD·타이머·자동 응답은 아직 미구현.
 - `stm32`: STM32 펌웨어 추가 위치.
 - `jetson/examples`: 기존 TCP·YOLO 인원 검출 예제. 게임 통합은 아직 미구현.

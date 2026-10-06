@@ -20,9 +20,12 @@ void * send_msg(void * arg);
 void * recv_msg(void * arg);
 void error_handling(char * msg);
 void lcd_demo(int sock);
+void send_all(int sock, const char *data, size_t length);
 
 char name[NAME_SIZE]="[Default]";
 char msg[BUF_SIZE];
+const char *demo_target = "ARD";
+long demo_cycles = 0;
 
 int main(int argc, char *argv[])
 {
@@ -30,14 +33,34 @@ int main(int argc, char *argv[])
 	struct sockaddr_in serv_addr;
 	pthread_t snd_thread, rcv_thread;
 	void * thread_return;
+	int demo = 0, target_set = 0;
 
-	if(argc != 4 && !(argc == 5 && !strcmp(argv[4], "--lcd-demo"))) {
-		printf("Usage : %s <IP> <port> <name> [--lcd-demo]\n",argv[0]);
+	if(argc < 4) {
+		printf("Usage : %s <IP> <port> <name> [--lcd-demo] [--target ID] [--cycles N]\n",argv[0]);
 		exit(1);
 	}
+	for(int i = 4; i < argc; i++) {
+		if(!strcmp(argv[i], "--lcd-demo")) demo = 1;
+		else if(!strcmp(argv[i], "--target") && i + 1 < argc) {
+			demo_target = argv[++i];
+			target_set = 1;
+			if(!*demo_target || strlen(demo_target) >= NAME_SIZE ||
+			   strspn(demo_target, "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_") != strlen(demo_target))
+				error_handling("invalid target ID");
+		} else if(!strcmp(argv[i], "--cycles") && i + 1 < argc) {
+			char *end;
+			errno = 0;
+			demo_cycles = strtol(argv[++i], &end, 10);
+			if(errno || !*argv[i] || *end || demo_cycles <= 0)
+				error_handling("cycles must be a positive integer");
+		} else error_handling("unknown or incomplete option");
+	}
+	if(!demo && (demo_cycles || target_set))
+		error_handling("--target and --cycles require --lcd-demo");
 
-	if(strlen(argv[3]) >= sizeof(name))
-		error_handling("name too long");
+	if(!*argv[3] || strlen(argv[3]) >= 10 ||
+	   strspn(argv[3], "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_") != strlen(argv[3]))
+		error_handling("login ID must be 1-9 letters, digits or underscores");
 	snprintf(name, sizeof(name), "%s",argv[3]);
 
 	sock = socket(PF_INET, SOCK_STREAM, 0);
@@ -52,9 +75,9 @@ int main(int argc, char *argv[])
 	if(connect(sock, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) == -1)
 		error_handling("connect() error");
 
-	sprintf(msg,"[%s:PASSWD]",name);
-	write(sock, msg, strlen(msg));
-	if(argc == 5) {
+	snprintf(msg, sizeof(msg), "[%s:PASSWD]", name);
+	send_all(sock, msg, strlen(msg));
+	if(demo) {
 		lcd_demo(sock);
 		close(sock);
 		return 0;
@@ -76,6 +99,17 @@ static double monotonic_seconds(void)
 	return now.tv_sec + now.tv_nsec / 1e9;
 }
 
+void send_all(int sock, const char *data, size_t length)
+{
+	size_t offset = 0;
+	while(offset < length) {
+		ssize_t n = send(sock, data + offset, length - offset, MSG_NOSIGNAL);
+		if(n < 0 && errno == EINTR) continue;
+		if(n <= 0) error_handling("send failed");
+		offset += n;
+	}
+}
+
 void lcd_demo(int sock)
 {
 	const int counts[][3] = {
@@ -84,6 +118,7 @@ void lcd_demo(int sock)
 	};
 	char response[256];
 	size_t used = 0, index = 0;
+	long sent = 0;
 	double next_send;
 
 	/* Wait for the login reply before sending application messages. */
@@ -97,26 +132,24 @@ void lcd_demo(int sock)
 	fputs(response, stdout);
 	if(!strstr(response, " New connected!"))
 		error_handling("login rejected");
-	fputs("Sending COUNT to ARD every 3 seconds. Ctrl+C to stop.\n", stdout);
+	printf("Sending COUNT to %s every 3 seconds. Ctrl+C to stop.\n", demo_target);
 	fflush(stdout);
 	next_send = monotonic_seconds();
 	while(1) {
 		double now = monotonic_seconds();
+		if(now >= next_send && demo_cycles && sent >= demo_cycles) return;
 		if(now >= next_send) {
 			char outgoing[BUF_SIZE];
-			size_t offset = 0;
 			int len = snprintf(outgoing, sizeof(outgoing),
-				"[ARD]COUNT@%d@%d@%d\n",
+				"[%s]COUNT@%d@%d@%d\n", demo_target,
 				counts[index][0], counts[index][1], counts[index][2]);
-			while(offset < (size_t)len) {
-				ssize_t n = send(sock, outgoing + offset, len - offset, MSG_NOSIGNAL);
-				if(n < 0 && errno == EINTR) continue;
-				if(n <= 0) error_handling("COUNT send failed");
-				offset += n;
-			}
+			if(len < 0 || (size_t)len >= sizeof(outgoing))
+				error_handling("COUNT message too long");
+			send_all(sock, outgoing, (size_t)len);
 			printf("TX: %s", outgoing);
 			fflush(stdout);
 			index = (index + 1) % (sizeof(counts) / sizeof(counts[0]));
+			sent++;
 			next_send = monotonic_seconds() + 3.0;
 		}
 		fd_set readable;
@@ -163,7 +196,7 @@ void * send_msg(void * arg)
 		ret = select(STDIN_FILENO + 1, &newset, NULL, NULL, &tv);
 		if(FD_ISSET(STDIN_FILENO, &newset))
 		{
-			fgets(msg, BUF_SIZE, stdin);
+			if(!fgets(msg, BUF_SIZE, stdin)) return NULL;
 			if(!strncmp(msg,"quit\n",5)) {
 				*sock = -1;
 				return NULL;

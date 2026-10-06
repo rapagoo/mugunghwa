@@ -3,6 +3,8 @@
 ## 주소
 
 - Pi 제어 클라이언트 ID: `PI`
+- Jetson 영상 클라이언트 ID: `JETSON`
+- STM32 ESP-01 TCP 클라이언트 ID: `STM`
 - Arduino Bluetooth 중계 클라이언트 ID: `ARD`
 - ID는 대소문자를 구분합니다.
 - 송신: `[수신자ID]명령@데이터\n`
@@ -39,4 +41,33 @@ LCD 첫 줄은 `T:012s ALL:04`, 둘째 줄은 `OK:02 OUT:01`처럼 MCU에서 구
 
 Arduino 스케치는 `[PI]DIAG@PING`을 5회 보내고 수신 바이트를 시리얼 모니터에 출력합니다.
 LCD 명령 처리와 자동 응답은 아직 구현하지 않았습니다.
-STM32와 Jetson의 기존 등록 ID는 이번 변경에서 유지했습니다. 해당 장치의 이름과 메시지는 통합 단계에서 확정합니다.
+Jetson은 `JETSON`, STM32는 `STM`으로 로그인합니다. `HSR_` 수업 ID는 새 개발 설정에서 사용하지 않습니다.
+
+## STM32 연결 시험
+
+STM32 UART ↔ ESP-01 ↔ Wi-Fi/TCP ↔ Pi 서버로 연결합니다.
+ESP-01 연결 후 STM32가 `[STM:PASSWD]`를 송신하고 로그인 성공을 기다립니다.
+`PASSWD`는 현재 수업 클라이언트와 호환되는 테스트 값입니다.
+로그인 문자열에는 LF를 붙이지 않고, 이후 명령과 응답은 LF로 끝냅니다.
+
+Jetson에서 표시 데이터 전송 경로만 시험할 때:
+
+```text
+Jetson → Pi: [STM]COUNT@4@2@1\n
+Pi → STM32: [JETSON]COUNT@4@2@1\n
+STM32 → Pi: [JETSON]APPLIED@COUNT@4@2@1\n
+Pi → Jetson: [STM]APPLIED@COUNT@4@2@1\n
+```
+
+STM32는 수신 발신자 헤더에 맞춰 응답 대상을 정해야 합니다.
+LCD를 실제 적용한 뒤 APPLIED를 응답하며 로그인 알림은 명령에서 제외합니다.
+TCP/UART 분할 수신을 누적하고 LF 단위로 처리해야 합니다.
+ESP-01의 `+IPD` 및 AT 응답과 게임 명령 파서는 분리합니다.
+
+이 직접 COUNT 전송은 통신 시험용입니다. 최종 흐름은
+Jetson → Pi(영상 후보), Pi(검증·경기 상태 확정) → STM(현장 명령)입니다.
+Jetson의 프레임별 사람 검출 수를 누적 참가자·도착·탈락 수로 취급하지 않습니다.
+
+2026-10-06 별도 15000번 테스트 서버에서 STM 소프트웨어 시뮬레이터로
+Jetson COUNT 세 개의 수신과 APPLIED 응답을 확인했습니다.
+실제 STM32·ESP-01·LCD 적용은 아직 검증하지 않았습니다.

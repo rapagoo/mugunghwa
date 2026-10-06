@@ -1,8 +1,10 @@
 *.o
 /pi/server/iot_server
 /pi/controller/iot_client
+/jetson/tcp_client/iot_client
 /pi/bluetooth/bluetooth_client
 /pi/server/idpasswd.txt
+/pi/server/idpasswd.txt.*
 /pi-import/
 /jetson-import/
 __pycache__/
