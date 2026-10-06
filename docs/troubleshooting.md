@@ -16,6 +16,7 @@
 | [TS-VISION-003](#ts-vision-003) | 2026-10-06 | 영상 축소 시 속도와 검출 유지 사이의 타협 필요 | 해당 영상은 960×540 선택 |
 | [TS-VISION-004](#ts-vision-004) | 2026-10-06 | 변환 시 598프레임이 595프레임으로 줄어듦 | 프레임 수 보존 조치·확인 완료 |
 | [TS-VISION-005](#ts-vision-005) | 2026-10-06 | 모든 프레임 순차 검사가 원래 속도 재생을 막음 | 오프라인 비동기 재생 구현·검증 완료 |
+| [TS-VISION-006](#ts-vision-006) | 2026-10-06 | TensorRT 8.0.1과 NumPy 1.24 자료형 변환 오류 | 재현·임시 대응 확인, 엔진 검증 예정 |
 
 ## 공통 조건과 지표
 
@@ -179,7 +180,29 @@ VNC 서비스는 활성 상태이며 Pi에는 연결하지 않았다.
 로컬 `.runtime/realtime-960x540-snapshot.jsonl`, Jetson `.runtime/realtime-960x540.jsonl`.
 후자는 반복 실행 시 덮어쓰므로 다음 측정부터 실행별 파일 이름으로 보존한다.
 
-## 다음 추론 최적화 계획 (엔진 비교 미실행)
+### TS-VISION-006
+
+**증상/재현:** 최적화 시작 전 `import tensorrt`는 성공했지만
+`tensorrt.nptype(tensorrt.float32)`는 `AttributeError: module 'numpy' has no attribute 'bool'`로 실패했다.
+TensorRT Python 8.0.1.6, NumPy 1.24.4 조합이다.
+
+**원인:** 설치된 TensorRT의 자료형 매핑 함수는 사전을 만들 때 `np.bool`을 참조한다.
+NumPy 1.24에서는 이 별칭이 제거돼 float32 변환에서도 오류가 발생했다.
+현재 Ultralytics 엔진 로딩도 이 함수를 사용하므로 엔진 생성 후 Python 적용 전에 호환 대응이 필요하다.
+
+**대응 확인:** 임시 프로세스에서만 `np.bool = bool`을 적용해 float32와 bool 변환이 성공하는 것을 확인했다.
+공용 실행 코드나 설치된 패키지를 수정한 것은 아니다. TensorRT 전용 진입점의 제한된 호환 처리 또는
+분리 환경을 검토하고, 실제 엔진 검출 결과까지 검증해야 한다.
+
+**변환 도구 준비:** ONNX 1.14.1과 protobuf 3.20.3의 aarch64/Python 3.8 휠을
+Jetson `.runtime/trt-setup/wheels/`에 보관하고 `.runtime/trt-setup/vendor/`에 `--no-deps --target`으로 배치했다.
+해당 프로세스에만 `PYTHONPATH`로 적용해 두 버전의 import를 확인했다.
+기존 환경의 protobuf 3.18.0과 NumPy 1.24.4는 유지했다.
+
+**남은 일:** 전후처리 조건을 맞춘 ONNX 내보내기, FP32/FP16 엔진 생성,
+Python 엔진 실행 경로와 추적/통과 후보 결과 비교. 엔진 단계는 아직 검증 전이다.
+
+## 다음 추론 최적화 계획 (환경 준비 착수, 엔진 비교 미실행)
 
 Python 전체를 C++로 옮기기 전에, 엔진과 주변 처리 비용을 분리해서 개선한다.
 PyTorch의 계산 비용이 큰 연산은 이미 C++/CUDA에서 실행되므로 언어 변경만으로
@@ -194,6 +217,8 @@ GPU 추론 시간이 크게 줄어든다고 가정하지 않는다.
    이번 문서 정리에서는 환경을 변경하거나 패키지를 설치하지 않았다.
    최신 TensorRT를 바로 설치하지 않고 현재 L4T/CUDA에 맞는 경로를 선택한다.
    [JetPack 4.6 구성](https://developer.nvidia.com/embedded/jetpack-sdk-46).
+   이후 사용자가 Python 유지·엔진 최적화를 승인해 별도 폴더에 변환 도구를 준비했고,
+   TensorRT/NumPy 호환 문제를 재현·임시 대응 확인했다(TS-VISION-006).
 2. **기준선 고정:** 960×540 영상 + 현재 모델 입력 640, 웹캠 경로를 각각 측정한다.
    현재의 직사각형 전처리 실제 텐서 크기·letterbox·NMS 조건도 기록해 엔진 비교에 맞춘다.
    워밍업을 제외하고 같은 구간에서 추론·추적·전체 지연·갱신 간격의 평균/p95,
