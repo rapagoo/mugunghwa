@@ -29,3 +29,6 @@ make -C jetson/tcp_client
 ```
 
 통신 시험은 [공용 클라이언트](../tools/tcp_client/README.md)를 참고하세요.
+현재 통신 송신기는 C 실행 파일 대신 `python3 jetson/count_test_client.py`입니다.
+표준 라이브러리만 사용하며 가상 COUNT를 PI로 보내고 응답을 출력합니다.
+YOLO용 가상환경은 영상 검사 시 사용합니다. 현재 가상 COUNT와 영상 처리는 분리되어 있습니다.

@@ -267,15 +267,6 @@ void * clnt_connection(void *arg)
 		return 0;
 }
 
-static int valid_counts(const char *text)
-{
-	unsigned total, success, failure;
-	char end;
-	return strspn(text, "0123456789@\n") == strlen(text) &&
-		sscanf(text, "%2u@%2u@%2u%c", &total, &success, &failure, &end) == 4 &&
-		end == '\n' && total <= 99 && success + failure <= total;
-}
-
 void route_line(char *line, CLIENT_INFO *client, CLIENT_INFO *first)
 {
 	char *closing = strchr(line, ']');
@@ -288,34 +279,6 @@ void route_line(char *line, CLIENT_INFO *client, CLIENT_INFO *first)
 	if(!*target || strlen(target) >= ID_SIZE ||
 	   strspn(target, "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_") != strlen(target)) return;
 	MSG_INFO info = {client->fd, client->id, target, outgoing, 0};
-	if(!strcmp(client->id, "JETSON") && !strcmp(target, "PI")) {
-		if(strncmp(payload, "COUNT@", 6) || !valid_counts(payload + 6)) {
-			log_file("Ignored invalid JETSON COUNT for PI\n");
-			return;
-		}
-		info.from = "PI";
-		snprintf(outgoing, sizeof(outgoing), "[PI]%s", payload);
-		info.len = strlen(outgoing);
-		const char *targets[] = {"ARD", "STM"};
-		for(int i = 0; i < 2; i++) {
-			info.to = (char *)targets[i];
-			snprintf(logbuf, sizeof(logbuf), "test : [JETSON->PI->%s] %s", targets[i], payload);
-			log_file(logbuf);
-			send_msg(&info, first);
-		}
-		return;
-	}
-	if((!strcmp(client->id, "STM") || !strcmp(client->id, "ARD")) &&
-	   !strcmp(target, "PI") && !strncmp(payload, "APPLIED@COUNT@", 14) && valid_counts(payload + 14)) {
-		info.from = "PI";
-		info.to = "JETSON";
-		snprintf(outgoing, sizeof(outgoing), "[PI]%s", payload);
-		info.len = strlen(outgoing);
-		snprintf(logbuf, sizeof(logbuf), "reply : [%s->PI->JETSON] %s", client->id, payload);
-		log_file(logbuf);
-		send_msg(&info, first);
-		return;
-	}
 	snprintf(outgoing, sizeof(outgoing), "[%s]%s", info.from, payload);
 	info.len = strlen(outgoing);
 	snprintf(logbuf, sizeof(logbuf), "msg : [%s->%s] %s", info.from, info.to, payload);

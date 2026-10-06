@@ -6,6 +6,7 @@ Pi의 기존 `game` 코드와 Jetson의 TCP·영상 예제를 기준으로 시�
 담당 범위와 Git 사용 흐름은 [저장소 관리](docs/repository.md)를 참고하세요.
 장비별 작업 폴더와 실행 환경: [Pi](docs/setup-pi.md), [Jetson](docs/setup-jetson.md).
 [STM32 Wi-Fi 연결 직후 수신 확인](docs/stm-wifi-test.md).
+[통신·게임 책임 분리와 검증 상태](docs/architecture.md).
 
 ## 구성
 
@@ -36,12 +37,13 @@ Pi에서 `pi/server` 폴더의 `./iot_server 5000`을 실행합니다.
 Jetson에서는 다음 명령을 사용합니다. 이미 실행 중이면 중복 실행하지 마세요.
 
 ```bash
-make -C jetson/tcp_client
-./jetson/tcp_client/iot_client 10.10.16.90 5000 JETSON --lcd-demo
+python3 jetson/count_test_client.py
 ```
 
-Jetson 목적지는 PI로 고정됩니다. Pi 서버가 가상 COUNT를 검사해
-ARD·STM 모두에 `[PI]COUNT`로 전달합니다. MCU 응답 목적지도 PI입니다.
+Jetson Python 목적지는 PI로 고정됩니다. Pi에서는 서버와 함께
+`python3 pi/controller/count_relay.py`를 실행합니다.
+PI 제어 클라이언트가 가상 COUNT를 검사해 ARD·STM 명령을 만들고 서버가 중계합니다.
+MCU 수신 헤더와 응답 목적지는 PI입니다. 서버는 게임 로직을 처리하지 않습니다.
 Arduino는 Pi의 Bluetooth 중계가 ARD로 로그인해야 합니다.
 STM32는 ESP-01 TCP 연결 뒤 STM으로 로그인합니다.
 가상 데이터는 3초 간격의 기존 여섯 패턴이며 카메라 결과가 아닙니다.
@@ -50,7 +52,7 @@ RUN/STOP/RESET은 보내지 않습니다.
 
 ## 현재 제한
 
-현재 COUNT 처리는 통신 시험용이며 게임 상태 판단은 구현 전입니다.
+현재 PI 제어의 COUNT 처리는 통신 시험용이며 게임 상태 판단은 구현 전입니다.
 서버는 인증 후 LF 단위로 메시지를 누적하고 여러 줄·초과 길이를 처리합니다.
 로그인 프레임의 분할 수신, 부분 송신, 장애 복구는 후속 개선 대상입니다.
 MCU는 로그인 알림과 명령을 구분해야 합니다.
