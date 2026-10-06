@@ -99,3 +99,32 @@ Pi에는 접속하지 않으며 통과·움직임·탈락 판정을 하지 않�
 현재 분석 시간에는 모델 준비·원본 디코딩·화면 파일 저장이 포함되므로 실제 웹캠 FPS와 다릅니다.
 
 실제 첫 촬영 영상의 [검출 비교·설정 적용 결과](video-test-20261006.md)를 기록했습니다.
+
+## 결승선 통과 후보와 VNC 화면
+
+`vision_client.py --config ...`는 같은 임시 추적 ID의 박스 아래쪽 중앙이 지정 선분을
+지정 방향으로 넘어가는지 확인합니다. 선 전후에 정규화 좌표 0.01의 여유를 두고,
+0.5초 이상 관측이 끊기면 이전 위치와 연결해 통과를 추정하지 않습니다.
+영역 안에서 접근하고 선분의 교차점과 확인 위치가 영역 안에 있어야 합니다.
+임시 ID당 한 번만 후보를 표시하고 영상 반복·재시작 때 초기화합니다.
+`FINISH CANDIDATE`는 Pi 최종 통과 판정이 아니며 현재는 화면·콘솔에만 표시합니다.
+
+현재 VNC의 데스크톱은 `:0`, 인증 파일은 `/run/user/1000/gdm/Xauthority`입니다.
+SSH에서 직접 같은 화면에 실행하려면:
+
+```bash
+cd /home/jetson/projects/mugunghwa/repo
+DISPLAY=:0 XAUTHORITY=/run/user/1000/gdm/Xauthority \
+/home/jetson/yolo_v8/bin/python jetson/vision_client.py \
+  --video data/video-tests/20261006-141148/20261006_141148.mp4 \
+  --config data/video-tests/20261006-141148/calibration.json \
+  --imgsz 640 --offline --display --loop --pause-on-candidate
+```
+
+후보가 나오면 자동 일시정지합니다. 창을 클릭한 뒤 Space로 재개, N으로 한 프레임,
+R로 처음부터, Q로 종료합니다. 모델 준비 중 안내 화면이 먼저 표시됩니다.
+Jetson의 추론 속도 때문에 원본보다 느리게 재생될 수 있지만 판정에는 영상 시간을 사용합니다.
+창의 닫기 버튼 대신 Q를 사용하세요.
+
+방향·선분 바깥 교차·관측 단절·좌표 흔들림·중복 후보 검사 통과.
+실제 598프레임 기록에서도 후보 1회: 교차 약 8.215초, 확인 약 8.261초.

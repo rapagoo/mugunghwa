@@ -15,6 +15,7 @@ import torch
 from ultralytics import YOLO
 from game.source import FrameSource
 from game import geometry
+from game.finish import FinishDetector
 
 
 def receive_line(stream):
@@ -40,6 +41,7 @@ def main():
     parser.add_argument('--loop', action='store_true', help='repeat video with fresh tracker state')
     parser.add_argument('--speed', type=float, default=1, help='video replay speed, 0.1..4')
     parser.add_argument('--preview-output', help='write the latest annotated frame to this image path')
+    parser.add_argument('--pause-on-candidate', action='store_true', help='pause video when a finish candidate is confirmed')
     parser.add_argument('--model', default=str(Path(__file__).parent / 'examples/yolov8n.pt'))
     parser.add_argument('--imgsz', type=int, default=320)
     parser.add_argument('--conf', type=float, default=0.35)
@@ -60,6 +62,18 @@ def main():
     if args.loop and not args.video:
         parser.error('--loop requires --video')
     calibration = geometry.load(args.config) if args.config else None
+    if args.pause_on_candidate and not (args.video and args.display and calibration):
+        parser.error('--pause-on-candidate requires video, display and config')
+    finish = FinishDetector(calibration) if calibration else None
+    window = 'Mugunghwa - provisional tracks'
+    if args.display:
+        cv2.namedWindow(window, cv2.WINDOW_NORMAL)
+        cv2.resizeWindow(window, 960, 540)
+        preparing = np.zeros((540, 960, 3), dtype=np.uint8)
+        cv2.putText(preparing, 'Preparing detector... Please wait', (60, 270),
+                    cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
+        cv2.imshow(window, preparing)
+        cv2.waitKey(1)
 
     device = 0 if torch.cuda.is_available() else 'cpu'
     model = YOLO(args.model)
@@ -104,6 +118,7 @@ def main():
                     for tracker in getattr(model.predictor, 'trackers', []):
                         tracker.reset()
                     epoch = current_epoch
+                    finish = FinishDetector(calibration) if calibration else None
                     print('REPLAY_RESET epoch=' + str(epoch), flush=True)
                 seq += 1
                 if seq > 2147483647:
@@ -119,6 +134,14 @@ def main():
                             if not calibration or geometry.inside(
                                 ((x1 + x2) / 2 / width, y2 / height), calibration['roi'])]
                 tracks = [(ids[i], coordinates[i]) for i in included if i < len(ids)]
+                new_events = []
+                if finish:
+                    for track_id, (x1, y1, x2, y2) in zip(ids, coordinates):
+                        event = finish.update(track_id, [(x1 + x2) / 2 / width, y2 / height], media_seconds)
+                        if event:
+                            new_events.append(event)
+                            print('FINISH_CANDIDATE epoch={} track={} crossed_s={:.3f} confirmed_s={:.3f}'.format(
+                                epoch, track_id, event['crossed_at'], event['confirmed_at']), flush=True)
                 people = len(included)
                 now = time.monotonic()
                 if now - last_sent >= 1 / args.send_hz:
@@ -146,17 +169,24 @@ def main():
                         geometry.overlay(preview, calibration)
                     cv2.putText(preview, 'media {:.2f}s | ROI {} | epoch {}'.format(media_seconds, people, epoch),
                                 (10, 25), cv2.FONT_HERSHEY_SIMPLEX, .6, (255, 255, 255), 2)
+                    if finish and finish.completed:
+                        latest = max(finish.completed.values(), key=lambda e: e['confirmed_at'])
+                        cv2.putText(preview, 'FINISH CANDIDATE ID {} @ {:.2f}s | total {}'.format(
+                            latest['track_id'], latest['crossed_at'], len(finish.completed)),
+                            (20, 70), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 255), 3)
                     if args.preview_output:
                         output = Path(args.preview_output)
                         output.parent.mkdir(parents=True, exist_ok=True)
                         if not cv2.imwrite(str(output), preview):
                             raise RuntimeError('Cannot write preview')
                     if args.display:
-                        cv2.imshow('Mugunghwa - provisional tracks', preview)
+                        cv2.imshow(window, preview)
                         key = cv2.waitKey(1) & 0xff
                         if key == ord('q'):
                             break
                         if args.video:
+                            if new_events and args.pause_on_candidate:
+                                paused = True
                             if key == ord(' '):
                                 paused = True
                             if key == ord('r'):
