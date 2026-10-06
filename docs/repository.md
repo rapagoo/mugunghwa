@@ -15,6 +15,20 @@ Pi와 Jetson에서 같은 저장소를 사용하고 각 장치 담당 폴더를 
 동시에 서로 다른 작업을 할 때는 기능별 브랜치를 사용합니다.
 통합 시험에는 두 장치의 `git rev-parse HEAD` 결과를 기록합니다.
 
+## 연결된 작업 폴더와 인증
+
+- Windows: `C:\Users\kccistc\Documents\Mugunghwa`
+- Pi: `/home/pi/Projects/mugunghwa/repo` ([환경](setup-pi.md))
+- Jetson: `/home/jetson/projects/mugunghwa/repo` ([환경](setup-jetson.md))
+
+Pi와 Jetson에는 각각 이 저장소에만 적용되는 읽기·쓰기 deploy key를 등록했습니다.
+개인키는 각 장비의 `~/.ssh/id_ed25519_mugunghwa_git`에만 보관합니다.
+GitHub 공식 API에서 확인한 호스트 키는 `~/.ssh/mugunghwa_github_known_hosts`에 둡니다.
+각 clone의 `core.sshCommand`가 해당 키를 사용하며 전역 SSH 설정은 변경하지 않습니다.
+키 이름은 `mugunghwa-pi`, `mugunghwa-jetson`입니다.
+장비를 더 이상 사용하지 않을 때 저장소 Settings → Deploy keys에서 해당 키를 삭제합니다.
+Git 작성자와 fast-forward pull 설정은 각 저장소에만 적용했습니다.
+
 ## 관리 대상
 
 소스, Makefile, 실행 스크립트, 통신 규약, 환경 설정 예제를 관리합니다.
