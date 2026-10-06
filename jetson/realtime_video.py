@@ -10,11 +10,11 @@ import statistics
 os.environ['YOLO_AUTOINSTALL'] = 'false'
 import cv2
 import torch
-from ultralytics import YOLO
 from game.source import FrameSource
 from game import geometry
 from game.finish import FinishDetector
 from game.realtime import LatestFrame, ReplayClock
+from game.detector import load_detector
 
 
 def main():
@@ -24,10 +24,13 @@ def main():
     parser.add_argument('--model', default=str(Path(__file__).parent / 'examples/yolov8n.pt'))
     parser.add_argument('--imgsz', type=int, default=640)
     parser.add_argument('--loop', action='store_true')
+    parser.add_argument('--cycles', type=int, help='stop after this many repetitions; requires --loop')
     parser.add_argument('--metrics', help='optional JSONL detection and replay timing log')
     args = parser.parse_args()
     if args.imgsz <= 0 or not Path(args.model).is_file():
         parser.error('positive image size and existing model required')
+    if args.cycles is not None and (args.cycles <= 0 or not args.loop):
+        parser.error('positive --cycles requires --loop')
     config = geometry.load(args.config)
     capture = FrameSource(video=args.video)
     first = capture.read()
@@ -43,6 +46,17 @@ def main():
                 cv2.FONT_HERSHEY_SIMPLEX, .7, (0, 255, 255), 2)
     cv2.imshow(window, initial)
     cv2.waitKey(1)
+    # The first frame may contain no detections, so also warm on a later frame
+    # before starting the media clock (covers postprocessing/track initialization).
+    capture.cap.set(cv2.CAP_PROP_POS_MSEC, 2000)
+    sample = capture.read()
+    warm_frame = first[0] if sample is None else sample[0]
+    capture.restart()
+    first = capture.read()
+    if first is None:
+        capture.close()
+        cv2.destroyAllWindows()
+        raise RuntimeError('Cannot restart video for replay')
     slot = LatestFrame()
     ready = threading.Event()
     result_lock = threading.Lock()
@@ -63,11 +77,11 @@ def main():
 
     def worker():
         try:
-            model = YOLO(args.model)
-            options = dict(imgsz=args.imgsz, conf=.35, classes=[0], device=0 if torch.cuda.is_available() else 'cpu',
+            model, input_size = load_detector(args.model, args.imgsz)
+            options = dict(imgsz=input_size, conf=.35, classes=[0], device=0 if torch.cuda.is_available() else 'cpu',
                            persist=True, tracker='bytetrack.yaml', verbose=False)
             for _ in range(5):
-                model.track(first[0], **options)
+                model.track(warm_frame, **options)
             serial, epoch, last_completed, last_media = 0, None, None, None
             finish = None
             ready.set()
@@ -192,6 +206,8 @@ def main():
                             wall_s=time.monotonic()-cycle_start,
                             mean_detect_interval_ms=statistics.mean(intervals) if intervals else None,
                             max_display_lateness_ms=late_max*1000))
+                if ended and args.cycles is not None and epoch + 1 >= args.cycles:
+                    break
                 capture.restart()
                 pending = capture.read()
                 epoch += 1

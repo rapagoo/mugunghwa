@@ -12,10 +12,10 @@ os.environ['YOLO_AUTOINSTALL'] = 'false'
 import cv2
 import numpy as np
 import torch
-from ultralytics import YOLO
 from game.source import FrameSource
 from game import geometry
 from game.finish import FinishDetector
+from game.detector import load_detector
 
 
 def receive_line(stream):
@@ -76,8 +76,8 @@ def main():
         cv2.waitKey(1)
 
     device = 0 if torch.cuda.is_available() else 'cpu'
-    model = YOLO(args.model)
-    options = dict(imgsz=args.imgsz, conf=args.conf, classes=[0], device=device,
+    model, input_size = load_detector(args.model, args.imgsz)
+    options = dict(imgsz=input_size, conf=args.conf, classes=[0], device=device,
                    tracker='bytetrack.yaml', persist=True, verbose=False)
     print('WARMUP device=', device, flush=True)
     model.track(np.zeros((480, 640, 3), dtype=np.uint8), **options)
