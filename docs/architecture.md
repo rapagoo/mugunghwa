@@ -6,7 +6,7 @@
 |---|---|---|
 | `pi/server/iot_server` | Pi, TCP 서버 | 로그인·연결·LF 프레임·목적지 중계 |
 | `jetson/count_test_client.py` | Jetson, JETSON | 가상 COUNT를 PI로만 송신 |
-| `pi/controller/count_relay.py` | Pi, PI | 값 검사·ARD/STM 명령 생성·응답 확인 |
+| `pi/controller/iot_client` (C) | Pi, PI | 값 검사·ARD/STM 명령 생성·응답 확인 |
 | Bluetooth 중계 | Pi, ARD | Arduino UART/Bluetooth와 TCP 연결 |
 | 팀원 STM32 펌웨어 | STM32+ESP-01, STM | PI 명령 실행·PI로 응답 |
 
@@ -26,6 +26,10 @@ PI 제어 프로그램이 PI로 로그인해 명령을 보내므로 MCU는 `[PI]
 Jetson에 MCU 대상 설정은 없습니다. Pi 제어 프로그램은 기본적으로 ARD·STM 모두에 보내며,
 필요하면 `--target STM` 또는 `--target ARD`로 선택할 수 있습니다.
 
+Pi 제어 소스는 `pi/controller/iot_client.c`입니다. 기존 Python 제어 프로그램은 제거했습니다.
+수업의 C 서버·C 클라이언트 구성을 유지하며 Jetson 영상·송신 프로그램은 Python입니다.
+Pi 제어는 수신을 계속 기다리는 방식이며 Ctrl+C로 종료합니다.
+
 ## 게임 개발로 확장
 
 Jetson Python에는 검출·참가자 추적·움직임/도착 후보 생성을 추가합니다.
@@ -36,7 +40,8 @@ Pi 제어 프로그램에는 경기 상태·최종 판정·음성·시간표·DB
 
 ## 검증 상태
 
-- 별도 15000번 서버에서 Python 송신기·PI 제어·STM/ARD 시뮬레이터 왕복 통과.
+- 별도 15000번 서버에서 Python 송신기·C PI 제어·STM/ARD 시뮬레이터 왕복 통과.
+- C 제어 소스는 `-Wall -Wextra -Werror` 빌드 통과.
 - 두 MCU의 발신자 헤더 PI, 응답 목적지 PI 확인.
 - 잘못된 COUNT 차단, TCP 분할·여러 줄 수신 통과.
 - 실제 Arduino Bluetooth는 최근 시도에서 `Host is down`; 실물 수신 미확인.
@@ -48,6 +53,7 @@ Pi에서 통합 검사를 다시 실행하려면:
 ```bash
 cd /home/pi/Projects/mugunghwa/repo
 make -C pi/server
+make -C pi/controller
 python3 tests/count_integration.py
 ```
 

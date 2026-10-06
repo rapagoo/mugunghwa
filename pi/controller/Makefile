@@ -2,7 +2,7 @@ CC = gcc
 CFLAGS ?= -O2
 LDLIBS = -pthread
 TARGET = iot_client
-SOURCE = ../../tools/tcp_client/iot_client.c
+SOURCE = iot_client.c
 
 .PHONY: all clean
 all: $(TARGET)

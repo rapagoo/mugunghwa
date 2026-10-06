@@ -29,8 +29,8 @@ def main():
                 server = subprocess.Popen([str(args.root / 'pi/server/iot_server'), str(args.port)],
                                           cwd=folder, stdout=log, stderr=log)
             time.sleep(0.3)
-            controller = subprocess.Popen([sys.executable, '-u', str(args.root / 'pi/controller/count_relay.py'),
-                                           '--port', str(args.port)], stdout=subprocess.PIPE,
+            controller = subprocess.Popen([str(args.root / 'pi/controller/iot_client'),
+                                           '127.0.0.1', str(args.port), 'PI'], stdout=subprocess.PIPE,
                                           stderr=subprocess.STDOUT, text=True)
             assert ' New connected!' in controller.stdout.readline()
             assert 'CONTROLLER_READY' in controller.stdout.readline()
@@ -72,7 +72,7 @@ def main():
                 assert sender.returncode == 0, output
                 assert output.count('RX: [PI]APPLIED@COUNT@1@0@0') == 2, output
                 print(output, end='')
-                print('PASS: Python sender, PI controller, both MCU replies, invalid/split/batch frames')
+                print('PASS: Python sender, C PI controller, both MCU replies, invalid/split/batch frames')
         finally:
             for proc in (sender, controller, server):
                 if proc is not None and proc.poll() is None:

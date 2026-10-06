@@ -56,7 +56,8 @@ cd /home/jetson/projects/mugunghwa/repo
 python3 jetson/count_test_client.py
 # Pi 제어 클라이언트 (이미 실행 중이면 중복 실행 금지)
 cd /home/pi/Projects/mugunghwa/repo
-python3 pi/controller/count_relay.py
+make -C pi/controller
+./pi/controller/iot_client 127.0.0.1 5000 PI
 # Pi 서버 로그
 tail -f /home/pi/Projects/mugunghwa/repo/.runtime/stm-server.log
 # Jetson 송신·응답 로그

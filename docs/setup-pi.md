@@ -21,8 +21,10 @@ make -C pi/bluetooth
 변경 전 로그인 설정은 `idpasswd.txt.before-stm`으로 보존하며 Git에서 제외합니다.
 STM Wi-Fi 시험 준비 시 기존 `game` 서버·PI 데모·Bluetooth 중계를 종료했습니다.
 현재는 새 저장소의 서버가 5000번에서 실행됩니다. [현재 시험 절차](stm-wifi-test.md)를 참고하세요.
-서버와 별도로 `python3 pi/controller/count_relay.py`가 PI로 로그인해 실행됩니다.
+서버와 별도로 `./pi/controller/iot_client 127.0.0.1 5000 PI`를 실행하면 PI로 로그인합니다.
 COUNT 검사·MCU 명령 생성은 이 제어 프로그램에서 수행합니다.
+제어 소스는 `pi/controller/iot_client.c`이며 `make -C pi/controller`로 빌드합니다.
+Python 제어 코드는 제거했습니다. 직접 실행할 때 서버부터 켜세요.
 두 서버가 동시에 같은 5000번 포트를 사용할 수 없습니다.
 서버를 실행할 때는 `pi/server` 폴더로 이동해야 로그인 파일을 찾습니다.
 실물 Bluetooth/LCD 통신은 별도 검증이 필요합니다.

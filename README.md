@@ -41,7 +41,7 @@ python3 jetson/count_test_client.py
 ```
 
 Jetson Python 목적지는 PI로 고정됩니다. Pi에서는 서버와 함께
-`python3 pi/controller/count_relay.py`를 실행합니다.
+`./pi/controller/iot_client 127.0.0.1 5000 PI`를 실행합니다.
 PI 제어 클라이언트가 가상 COUNT를 검사해 ARD·STM 명령을 만들고 서버가 중계합니다.
 MCU 수신 헤더와 응답 목적지는 PI입니다. 서버는 게임 로직을 처리하지 않습니다.
 Arduino는 Pi의 Bluetooth 중계가 ARD로 로그인해야 합니다.

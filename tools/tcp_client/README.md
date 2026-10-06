@@ -20,5 +20,5 @@ Pi 제어 클라이언트가 COUNT를 검사하고 ARD와 STM 명령을 생성�
 서버는 중계만 합니다. MCU의 응답 목적지도 PI입니다.
 어떤 MCU가 응답했는지는 Pi 제어 로그에서 확인합니다.
 이 기능은 통신 테스트이며 실제 경기 상태 판단은 아직 구현 전입니다.
-Pi에서 `pi/controller/count_relay.py`를 함께 실행합니다. 동일 ID를 중복 실행하지 마세요.
+Pi에서 `pi/controller/iot_client`를 함께 실행합니다. 동일 ID를 중복 실행하지 마세요.
 [MCU 연결 절차](../../docs/stm-wifi-test.md)를 참고하세요.
