@@ -1,0 +1,2 @@
+# Python 3.8-compatible pure Python driver; does not change CUDA/torch packages.
+PyMySQL==1.1.1

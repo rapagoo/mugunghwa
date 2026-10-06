@@ -132,11 +132,16 @@ def main():
     parser.add_argument('--imgsz', type=int, default=640)
     parser.add_argument('--preview-hz', type=float, default=5)
     parser.add_argument('--database', default='.runtime/web/game.db')
+    parser.add_argument('--db-config', help='private MariaDB JSON config; overrides SQLite')
     args = parser.parse_args()
     if not 0 < args.preview_hz <= 15 or args.imgsz <= 0:
         parser.error('preview-hz must be >0 and <=15; imgsz must be positive')
     monitor = Monitor('video' if args.video else 'camera')
-    database = GameDatabase(args.database)
+    if args.db_config:
+        from game.mariadb_store import MariaGameDatabase
+        database = MariaGameDatabase(args.db_config)
+    else:
+        database = GameDatabase(args.database)
     server = create_server(args.host,args.port,monitor,database)
     stop = threading.Event()
     worker = threading.Thread(target=run_vision,args=(args,monitor,stop),daemon=True)

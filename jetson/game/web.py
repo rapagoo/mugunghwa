@@ -6,6 +6,7 @@ import sqlite3
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from .mariadb_store import DatabaseUnavailable
 
 
 class Monitor:
@@ -124,7 +125,7 @@ def create_server(host, port, monitor, database):
                     self.send(b'Not found', 'text/plain', 404)
             except (BrokenPipeError, ConnectionResetError, TimeoutError):
                 self.close_connection = True
-            except sqlite3.Error:
+            except (sqlite3.Error, DatabaseUnavailable):
                 self.send(b'Database unavailable', 'text/plain', 503)
 
         def log_message(self, *args):

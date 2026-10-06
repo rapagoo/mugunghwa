@@ -46,6 +46,11 @@ HTTP 접속 실패·카메라 오류·추론 준비·영상 종료를 구분합�
 
 ## DB와 이후 연결
 
+MariaDB 연결은 [Pi DB 설정 문서](database.md)를 따른다.
+`--db-config .runtime/db/web.json` 지정 시 Pi MariaDB에서 읽고, 지정하지 않으면 아래 SQLite 경로를 사용한다.
+두 DB 사이의 자동 복제/대체는 없다. MariaDB의 빈 게임 상태는 'DB 연결됨 · 게임 대기'로 표시한다.
+아래 SQLite 설명은 최초 웹 모니터의 기본 경로 기록이다.
+
 기본 DB는 **Jetson**의 `.runtime/web/game.db` (Git 제외)입니다. 실행 시 빈 테이블을 생성하고
 웹 서버는 게임 데이터를 조회합니다. 게임 시작 버튼·판정 쓰기 API는 없습니다.
 

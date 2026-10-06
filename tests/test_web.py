@@ -7,11 +7,37 @@ import tempfile
 import threading
 import unittest
 from urllib.request import urlopen
+from urllib.error import HTTPError
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'jetson'))
 from game.web import Monitor, GameDatabase, create_server
+from game.mariadb_store import DatabaseUnavailable
 
 
 class WebTests(unittest.TestCase):
+    def test_database_failure_does_not_expose_details_or_break_preview(self):
+        class FailedDatabase:
+            def snapshot(self):
+                raise DatabaseUnavailable('private internal error')
+        monitor=Monitor('video')
+        monitor.update({'people':1},b'jpeg')
+        server=create_server('127.0.0.1',0,monitor,FailedDatabase())
+        thread=threading.Thread(target=server.serve_forever,daemon=True)
+        thread.start()
+        try:
+            url='http://127.0.0.1:'+str(server.server_port)
+            with self.assertRaises(HTTPError) as caught:
+                urlopen(url+'/api/game')
+            self.assertEqual(caught.exception.code,503)
+            self.assertEqual(caught.exception.read(),b'Database unavailable')
+            caught.exception.close()
+            with urlopen(url+'/frame.jpg') as response:
+                self.assertEqual(response.read(),b'jpeg')
+        finally:
+            monitor.close()
+            server.shutdown()
+            server.server_close()
+            thread.join()
+
     def test_database_persistence_and_no_vision_verdict(self):
         base=Path(__file__).resolve().parents[1]/'.runtime'
         base.mkdir(exist_ok=True)
