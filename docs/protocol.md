@@ -50,24 +50,31 @@ ESP-01 연결 후 STM32가 `[STM:PASSWD]`를 송신하고 로그인 성공을 �
 `PASSWD`는 현재 수업 클라이언트와 호환되는 테스트 값입니다.
 로그인 문자열에는 LF를 붙이지 않고, 이후 명령과 응답은 LF로 끝냅니다.
 
-Jetson에서 표시 데이터 전송 경로만 시험할 때:
+Pi 제어 클라이언트가 명령을 만들어 보내는 테스트 경로:
 
 ```text
-Jetson → Pi: [STM]COUNT@4@2@1\n
-Pi → STM32: [JETSON]COUNT@4@2@1\n
-STM32 → Pi: [JETSON]APPLIED@COUNT@4@2@1\n
-Pi → Jetson: [STM]APPLIED@COUNT@4@2@1\n
+Jetson → Pi 서버: [PI]COUNT@4@2@1\n
+Pi 제어 클라이언트 수신: [JETSON]COUNT@4@2@1\n
+Pi 제어 클라이언트 → Pi 서버: [STM]COUNT@4@2@1\n
+STM32 수신: [PI]COUNT@4@2@1\n
+STM32 → Pi 서버: [PI]APPLIED@COUNT@4@2@1\n
+Pi 제어 클라이언트 수신: [STM]APPLIED@COUNT@4@2@1\n
+Pi 제어 클라이언트 → Pi 서버: [JETSON]APPLIED@COUNT@4@2@1\n
+Jetson 수신: [PI]APPLIED@COUNT@4@2@1\n
 ```
 
-STM32는 수신 발신자 헤더에 맞춰 응답 대상을 정해야 합니다.
+STM32와 Arduino는 `[PI]` 명령을 받고 응답도 `[PI]`로 보냅니다.
 LCD를 실제 적용한 뒤 APPLIED를 응답하며 로그인 알림은 명령에서 제외합니다.
 TCP/UART 분할 수신을 누적하고 LF 단위로 처리해야 합니다.
 ESP-01의 `+IPD` 및 AT 응답과 게임 명령 파서는 분리합니다.
 
-이 직접 COUNT 전송은 통신 시험용입니다. 최종 흐름은
+현재 Pi의 `count_relay.py`는 유효한 COUNT를 검사해 현장 명령으로 전달합니다.
+게임 상태 판단은 아직 구현 전입니다. 최종 흐름은
 Jetson → Pi(영상 후보), Pi(검증·경기 상태 확정) → STM(현장 명령)입니다.
 Jetson의 프레임별 사람 검출 수를 누적 참가자·도착·탈락 수로 취급하지 않습니다.
 
 2026-10-06 별도 15000번 테스트 서버에서 STM 소프트웨어 시뮬레이터로
-Jetson COUNT 세 개의 수신과 APPLIED 응답을 확인했습니다.
+`[PI]COUNT` 수신, PI 목적지 응답, Jetson으로 응답 전달을 확인했습니다.
+성공+실패가 총인원을 초과하는 COUNT는 Pi 제어 클라이언트가 차단합니다.
+기존 수업 서버의 TCP 분할 수신 처리는 아직 개선 전이며 전체 경로의 분할 수신 시험은 통과하지 않았습니다.
 실제 STM32·ESP-01·LCD 적용은 아직 검증하지 않았습니다.

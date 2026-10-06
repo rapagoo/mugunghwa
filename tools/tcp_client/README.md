@@ -9,7 +9,7 @@ Jetson에서:
 ```bash
 cd /home/jetson/projects/mugunghwa/repo
 make -C jetson/tcp_client
-./jetson/tcp_client/iot_client 10.10.16.90 5000 JETSON --lcd-demo --target STM --cycles 3
+./jetson/tcp_client/iot_client 10.10.16.90 5000 JETSON --lcd-demo --target PI --cycles 3
 ```
 
 Pi 제어 클라이언트에서 STM으로:
@@ -22,7 +22,8 @@ Pi 제어 클라이언트에서 STM으로:
 생략하면 계속 전송합니다. 인증 성공 후 처음 한 개를 즉시 전송합니다.
 COUNT는 기존 여섯 개의 가상 총인원·성공·실패 패턴이며 실제 카메라 판정과 연결되지 않았습니다.
 반드시 대상 장치가 로그인한 뒤 실행하세요. 같은 ID로 중복 로그인하지 마세요.
-STM32 파서는 시험 시 `[JETSON]`, 최종 Pi 제어 시 `[PI]` 헤더를 처리해야 합니다.
+Pi에서 `python3 pi/controller/count_relay.py --target STM`을 먼저 실행합니다.
+STM32와 Arduino는 `[PI]` 헤더를 처리하고 응답 목적지를 `PI`로 사용합니다.
 등록 설정은 서버 시작 시 읽습니다. STM Wi-Fi 시험 준비 시 새 저장소의 서버로 전환했습니다.
 Jetson STM 대상 데모가 백그라운드 실행 중입니다. [현재 시험 절차](../../docs/stm-wifi-test.md)를 참고하세요.
 현재 클라이언트는 진단 도구이며 완성된 경기 제어/영상 클라이언트가 아닙니다.
