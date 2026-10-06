@@ -9,6 +9,7 @@ Pi의 기존 `game` 코드와 Jetson의 TCP·영상 예제를 기준으로 시�
 [통신·게임 책임 분리와 검증 상태](docs/architecture.md).
 [Jetson 웹캠 검출·추적 개발](docs/jetson-development.md).
 [게임 영상 입력·영역·결승선 설정](docs/game-camera-setup.md).
+[프로젝트 트러블슈팅 기록·추론 최적화 계획](docs/troubleshooting.md).
 
 ## 구성
 
