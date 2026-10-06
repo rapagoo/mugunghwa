@@ -36,3 +36,6 @@ YOLO용 가상환경은 영상 검사 시 사용합니다. 현재 가상 COUNT�
 실제 웹캠 관측 송신기는 `jetson/vision_client.py`입니다.
 [실행 방법·관측 메시지·개발 단계](jetson-development.md)를 참고하세요.
 기존 YOLO 환경에 ByteTrack용 `lapx==0.5.12`를 추가했습니다.
+
+게임 개발은 기존 장비 `game` 폴더가 아닌 Git 저장소 `repo/jetson/game`에서 진행합니다.
+[영상 입력과 클릭 설정](game-camera-setup.md)을 참고하세요.

@@ -8,6 +8,7 @@ Pi의 기존 `game` 코드와 Jetson의 TCP·영상 예제를 기준으로 시�
 [STM32 Wi-Fi 연결 직후 수신 확인](docs/stm-wifi-test.md).
 [통신·게임 책임 분리와 검증 상태](docs/architecture.md).
 [Jetson 웹캠 검출·추적 개발](docs/jetson-development.md).
+[게임 영상 입력·영역·결승선 설정](docs/game-camera-setup.md).
 
 ## 구성
 
@@ -20,6 +21,7 @@ Pi의 기존 `game` 코드와 Jetson의 TCP·영상 예제를 기준으로 시�
 - `stm32`: STM32 펌웨어 추가 위치.
 - `jetson/examples`: 기존 TCP·YOLO 인원 검출 예제. 게임 통합은 아직 미구현.
 - `jetson/vision_client.py`: YOLO·ByteTrack 웹캠 관측을 PI로 전송하는 Python 클라이언트.
+- `jetson/game`: 공통 웹캠·영상 입력, 영역 설정 브라우저 화면, 설정 검증 모듈.
 - `docs/protocol.md`: 주소 규칙과 LCD 테스트 메시지 합의안.
 
 ## Pi에서 빌드

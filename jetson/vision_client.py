@@ -5,6 +5,7 @@ from pathlib import Path
 import socket
 import time
 import uuid
+from contextlib import ExitStack
 
 # Never let Ultralytics install or upgrade dependencies during a camera run.
 os.environ['YOLO_AUTOINSTALL'] = 'false'
@@ -12,6 +13,8 @@ import cv2
 import numpy as np
 import torch
 from ultralytics import YOLO
+from game.source import FrameSource
+from game import geometry
 
 
 def receive_line(stream):
@@ -29,7 +32,14 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--host', default='10.10.16.90')
     parser.add_argument('--port', type=int, default=5000)
-    parser.add_argument('--camera', type=int, default=0)
+    source_args = parser.add_mutually_exclusive_group()
+    source_args.add_argument('--camera', type=int, default=0)
+    source_args.add_argument('--video', help='recorded video; currently offline only')
+    parser.add_argument('--offline', action='store_true', help='inspect without connecting to PI')
+    parser.add_argument('--config', help='calibration JSON exported by game/calibrate.html')
+    parser.add_argument('--loop', action='store_true', help='repeat video with fresh tracker state')
+    parser.add_argument('--speed', type=float, default=1, help='video replay speed, 0.1..4')
+    parser.add_argument('--preview-output', help='write the latest annotated frame to this image path')
     parser.add_argument('--model', default=str(Path(__file__).parent / 'examples/yolov8n.pt'))
     parser.add_argument('--imgsz', type=int, default=320)
     parser.add_argument('--conf', type=float, default=0.35)
@@ -38,10 +48,18 @@ def main():
     parser.add_argument('--display', action='store_true', help='requires Jetson desktop display')
     args = parser.parse_args()
     if (not 1 <= args.port <= 65535 or args.imgsz <= 0 or not 0 < args.conf < 1
-            or not 0 < args.send_hz <= 10 or (args.frames is not None and args.frames <= 0)):
+            or not 0 < args.send_hz <= 10 or not 0.1 <= args.speed <= 4
+            or (args.frames is not None and args.frames <= 0)):
         parser.error('invalid port, image size, confidence, send rate or frame limit')
     if not Path(args.model).is_file():
         parser.error('model file does not exist: ' + args.model)
+    if args.video and not args.offline:
+        parser.error('Use --offline for video replay; PI game/media clock sync is not implemented yet')
+    if args.video and not Path(args.video).is_file():
+        parser.error('video file does not exist: ' + args.video)
+    if args.loop and not args.video:
+        parser.error('--loop requires --video')
+    calibration = geometry.load(args.config) if args.config else None
 
     device = 0 if torch.cuda.is_available() else 'cpu'
     model = YOLO(args.model)
@@ -50,63 +68,103 @@ def main():
     print('WARMUP device=', device, flush=True)
     model.track(np.zeros((480, 640, 3), dtype=np.uint8), **options)
     boot = uuid.uuid4().hex[:8]
-    cap = cv2.VideoCapture(args.camera)
+    capture = FrameSource(args.camera, args.video, args.loop)
     try:
-        if not cap.isOpened():
-            raise RuntimeError('Cannot open webcam')
-        cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
-        cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
-        with socket.create_connection((args.host, args.port), timeout=5) as conn:
-            conn.settimeout(3)
-            with conn.makefile('rb') as stream:
+        with ExitStack() as resources:
+            conn = stream = None
+            if not args.offline:
+                conn = resources.enter_context(socket.create_connection((args.host, args.port), timeout=5))
+                conn.settimeout(3)
+                stream = resources.enter_context(conn.makefile('rb'))
                 conn.sendall(b'[JETSON:PASSWD]')
                 reply = receive_line(stream)
                 if not reply.startswith('[JETSON] New connected!'):
                     raise RuntimeError('JETSON login rejected: ' + reply)
-                print('VISION_READY boot=' + boot, flush=True)
-                last_sent = float('-inf')
-                seq = 0
-                while args.frames is None or seq < args.frames:
-                    ok, frame = cap.read()
-                    if not ok:
-                        raise RuntimeError('Frame capture failed')
-                    seq += 1
-                    if seq > 2147483647:
-                        raise RuntimeError('Frame sequence exhausted; restart with a new boot ID')
-                    start = time.monotonic()
-                    result = model.track(frame, **options)[0]
-                    boxes = result.boxes
-                    ids = [] if boxes.id is None else boxes.id.int().cpu().tolist()
-                    people = len(boxes)
-                    now = time.monotonic()
-                    if now - last_sent >= 1 / args.send_hz:
-                        height, width = frame.shape[:2]
-                        messages = []
-                        for track_id, (x1, y1, x2, y2) in zip(ids, boxes.xyxy.cpu().tolist()):
-                            if not 1 <= track_id <= 2147483647:
-                                raise RuntimeError('Track ID outside protocol range')
-                            messages.append('[PI]POSITION@{}@{}@{}@{}@{}\n'.format(
-                                boot, seq, track_id, normalized((x1 + x2) / 2, width),
-                                normalized(y2, height)))
-                        messages.append('[PI]VISION@{}@{}@{}@{}\n'.format(
-                            boot, seq, people, len(ids)))
-                        if people > 999:
-                            raise RuntimeError('Observation count outside protocol range')
+            print('VISION_READY boot=' + boot + (' OFFLINE' if args.offline else ''), flush=True)
+            last_sent = float('-inf')
+            seq, epoch, paused = 0, 0, False
+            while args.frames is None or seq < args.frames:
+                if paused:
+                    key = cv2.waitKey(40) & 0xff
+                    if key == ord('q'):
+                        break
+                    if key == ord('r') and capture.restart():
+                        paused = False
+                    if key not in (ord(' '), ord('n')) and paused:
+                        continue
+                    if key == ord(' '):
+                        paused = False
+                start = time.monotonic()
+                item = capture.read()
+                if item is None:
+                    print('VIDEO_END', flush=True)
+                    break
+                frame, media_seconds, current_epoch = item
+                if current_epoch != epoch:
+                    for tracker in getattr(model.predictor, 'trackers', []):
+                        tracker.reset()
+                    epoch = current_epoch
+                    print('REPLAY_RESET epoch=' + str(epoch), flush=True)
+                seq += 1
+                if seq > 2147483647:
+                    raise RuntimeError('Frame sequence exhausted; restart with a new boot ID')
+                height, width = frame.shape[:2]
+                if calibration:
+                    geometry.check_size(calibration, width, height)
+                result = model.track(frame, **options)[0]
+                boxes = result.boxes
+                coordinates = boxes.xyxy.cpu().tolist()
+                ids = [] if boxes.id is None else boxes.id.int().cpu().tolist()
+                included = [i for i, (x1, y1, x2, y2) in enumerate(coordinates)
+                            if not calibration or geometry.inside(
+                                ((x1 + x2) / 2 / width, y2 / height), calibration['roi'])]
+                tracks = [(ids[i], coordinates[i]) for i in included if i < len(ids)]
+                people = len(included)
+                now = time.monotonic()
+                if now - last_sent >= 1 / args.send_hz:
+                    messages = []
+                    for track_id, (x1, y1, x2, y2) in tracks:
+                        if not 1 <= track_id <= 2147483647:
+                            raise RuntimeError('Track ID outside protocol range')
+                        messages.append('[PI]POSITION@{}@{}@{}@{}@{}\n'.format(
+                            boot, seq, track_id, normalized((x1 + x2) / 2, width), normalized(y2, height)))
+                    messages.append('[PI]VISION@{}@{}@{}@{}\n'.format(boot, seq, people, len(tracks)))
+                    if people > 999:
+                        raise RuntimeError('Observation count outside protocol range')
+                    if conn:
                         conn.sendall(''.join(messages).encode('ascii'))
                         ack = receive_line(stream)
-                        expected = '[PI]VISION_ACK@{}@{}'.format(boot, seq)
-                        if ack != expected:
+                        if ack != '[PI]VISION_ACK@{}@{}'.format(boot, seq):
                             raise RuntimeError('Unexpected observation reply: ' + ack)
-                        last_sent = now
-                        print('VISION seq={} people={} tracked={} inference_ms={:.1f} ACK'.format(
-                            seq, people, len(ids), (now - start) * 1000), flush=True)
+                    last_sent = now
+                    print('VISION seq={} media_s={:.3f} epoch={} people={} tracked={} inference_ms={:.1f} {}'.format(
+                        seq, media_seconds, epoch, people, len(tracks), (now - start) * 1000,
+                        'OFFLINE' if args.offline else 'ACK'), flush=True)
+                if args.display or args.preview_output:
+                    preview = result.plot()
+                    if calibration:
+                        geometry.overlay(preview, calibration)
+                    cv2.putText(preview, 'media {:.2f}s | ROI {} | epoch {}'.format(media_seconds, people, epoch),
+                                (10, 25), cv2.FONT_HERSHEY_SIMPLEX, .6, (255, 255, 255), 2)
+                    if args.preview_output:
+                        output = Path(args.preview_output)
+                        output.parent.mkdir(parents=True, exist_ok=True)
+                        if not cv2.imwrite(str(output), preview):
+                            raise RuntimeError('Cannot write preview')
                     if args.display:
-                        cv2.imshow('Mugunghwa - provisional tracks', result.plot())
-                        if cv2.waitKey(1) & 0xff == ord('q'):
+                        cv2.imshow('Mugunghwa - provisional tracks', preview)
+                        key = cv2.waitKey(1) & 0xff
+                        if key == ord('q'):
                             break
+                        if args.video:
+                            if key == ord(' '):
+                                paused = True
+                            if key == ord('r'):
+                                capture.restart()
+                if args.video and not paused:
+                    time.sleep(max(0, 1 / capture.fps / args.speed - (time.monotonic() - start)))
     finally:
-        cap.release()
+        capture.close()
         if args.display:
             cv2.destroyAllWindows()
 

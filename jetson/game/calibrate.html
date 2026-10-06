@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="ko">
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>무궁화 게임 · 영역 설정</title>
+<style>
+body{margin:0;background:#101827;color:#e9eef6;font:16px/1.6 system-ui,sans-serif}main{max-width:1050px;margin:auto;padding:28px}h1{font-size:27px;margin:0}p{color:#b8c6d9}button,label.file{background:#26384e;color:white;border:1px solid #516580;padding:10px 16px;border-radius:8px;cursor:pointer;font:inherit}button:hover,label.file:hover{background:#36506e}button:disabled{opacity:.4;cursor:default}.row{display:flex;gap:10px;flex-wrap:wrap;margin:18px 0}.active{outline:2px solid #76dca3}canvas{display:block;width:100%;height:auto;background:#202d40;border:1px solid #516580;border-radius:8px;cursor:crosshair}video{max-width:100%;max-height:180px}#status{min-height:28px;color:#ffda83}.hint{font-size:14px}input[type=file]{max-width:100%}code{color:#9bdbb4}
+</style>
+<main>
+<h1>무궁화 게임 · 영역과 결승선</h1>
+<p>웹캠에서 추출한 사진 또는 촬영 영상을 열고, 게임 구역과 통과 방향을 지정하세요.</p>
+<div class="row"><label>사진·영상 <input id="media" type="file" accept="image/*,video/*"></label><label>설정 불러오기 <input id="config" type="file" accept=".json"></label><button id="practice">연습 화면</button></div>
+<video id="video" controls hidden></video><button id="freeze" hidden>이 장면 사용</button>
+<div class="row"><button data-mode="roi" class="active">1. 게임 영역</button><button data-mode="line">2. 결승선 두 점</button><button data-mode="direction">3. 통과할 쪽</button><button id="undo">되돌리기</button><button id="clear">전체 초기화</button><button id="save" disabled>설정 저장</button></div>
+<p class="hint">영역은 가장자리를 순서대로 클릭하세요. 결승선은 두 점을, 통과 방향은 선 너머의 한 점을 클릭하세요. 녹색은 게임 영역, 노란색은 결승선·통과 방향입니다.</p>
+<canvas id="canvas" width="960" height="540" aria-label="카메라 영역 설정 화면"></canvas>
+<p id="status" role="status">사진이나 영상을 먼저 선택하세요.</p>
+<details id="jsonPanel" hidden><summary>설정 JSON · 다운로드가 안 되면 내용을 calibration.json으로 저장하세요</summary><textarea id="jsonOutput" readonly rows="12" aria-label="설정 JSON" style="box-sizing:border-box;width:100%;background:#172338;color:#e9eef6"></textarea></details>
+<p class="hint">영상 재생·일시정지·이동은 위 영상의 컨트롤을 사용한 뒤 ‘이 장면 사용’을 누르세요. 설정 작업은 이 브라우저 안에서 처리됩니다. 새 구도에서는 설정을 다시 만드세요.</p>
+</main>
+<script>
+'use strict';
+const canvas=document.querySelector('#canvas'),ctx=canvas.getContext('2d'),status=document.querySelector('#status'),video=document.querySelector('#video');
+const backing=document.createElement('canvas');
+let roi=[],line=[],direction=null,mode='roi',ready=false,sourceName='',url=null;
+function cross(a,b,p){return (b[0]-a[0])*(p[1]-a[1])-(b[1]-a[1])*(p[0]-a[0]);}
+function valid(c){
+ if(!c||typeof c!=='object'||Array.isArray(c))throw Error('설정은 JSON 객체여야 합니다.');
+ const point=p=>Array.isArray(p)&&p.length===2&&p.every(v=>typeof v==='number'&&Number.isFinite(v)&&v>=0&&v<=1);
+ if(c.schema_version!==1||!Array.isArray(c.reference_size)||c.reference_size.length!==2||!c.reference_size.every(v=>Number.isInteger(v)&&v>0))throw Error('지원하지 않는 설정 형식입니다.');
+ if(!Array.isArray(c.roi)||c.roi.length<3||c.roi.length>32||!c.roi.every(point)||new Set(c.roi.map(p=>p.join(','))).size!==c.roi.length)throw Error('영역은 서로 다른 점 3~32개로 지정하세요.');
+ const area=c.roi.reduce((s,a,i)=>{const b=c.roi[(i+1)%c.roi.length];return s+a[0]*b[1]-b[0]*a[1];},0);
+ if(Math.abs(area)<1e-6)throw Error('영역의 넓이가 없습니다.');
+ for(let i=0;i<c.roi.length;i++)for(let j=i+1;j<c.roi.length;j++){
+  if(j===i+1||(i===0&&j===c.roi.length-1))continue;
+  const a=c.roi[i],b=c.roi[(i+1)%c.roi.length],d=c.roi[j],e=c.roi[(j+1)%c.roi.length];
+  if(cross(a,b,d)*cross(a,b,e)<=0&&cross(d,e,a)*cross(d,e,b)<=0&&[0,1].every(k=>Math.max(Math.min(a[k],b[k]),Math.min(d[k],e[k]))<=Math.min(Math.max(a[k],b[k]),Math.max(d[k],e[k]))))throw Error('영역의 선들이 서로 교차합니다.');
+ }
+ if(!Array.isArray(c.finish_line)||c.finish_line.length!==2||!c.finish_line.every(point)||c.finish_line[0].every((v,i)=>v===c.finish_line[1][i]))throw Error('결승선은 서로 다른 두 점으로 지정하세요.');
+ if(!point(c.finish_direction_point)||Math.abs(cross(...c.finish_line,c.finish_direction_point))<1e-6)throw Error('결승선 위가 아닌, 통과할 쪽을 클릭하세요.');
+ return c;
+}
+function config(){return {schema_version:1,reference_size:[canvas.width,canvas.height],source_name:sourceName,roi,finish_line:line,finish_direction_point:direction};}
+function draw(){
+ document.querySelector('#jsonPanel').hidden=true;
+ ctx.clearRect(0,0,canvas.width,canvas.height);if(ready)ctx.drawImage(backing,0,0);
+ const px=p=>[p[0]*(canvas.width-1),p[1]*(canvas.height-1)];
+ function path(points,color,closed){if(!points.length)return;ctx.strokeStyle=color;ctx.fillStyle=color;ctx.lineWidth=Math.max(2,canvas.width/300);ctx.beginPath();points.forEach((p,i)=>{const q=px(p);i?ctx.lineTo(...q):ctx.moveTo(...q);});if(closed)ctx.closePath();ctx.stroke();points.forEach(p=>{ctx.beginPath();ctx.arc(...px(p),Math.max(4,canvas.width/180),0,Math.PI*2);ctx.fill();});}
+ path(roi,'#71eea4',roi.length>=3);path(line,'#ffdc70',false);
+ if(direction&&line.length===2){const mid=[(line[0][0]+line[1][0])/2,(line[0][1]+line[1][1])/2];path([mid,direction],'#ffdc70',false);const [x,y]=px(direction),[mx,my]=px(mid),angle=Math.atan2(y-my,x-mx),size=canvas.width/40;ctx.beginPath();ctx.moveTo(x,y);ctx.lineTo(x-size*Math.cos(angle-.5),y-size*Math.sin(angle-.5));ctx.moveTo(x,y);ctx.lineTo(x-size*Math.cos(angle+.5),y-size*Math.sin(angle+.5));ctx.stroke();}
+ try{valid(config());document.querySelector('#save').disabled=!ready;}catch(e){document.querySelector('#save').disabled=true;}
+}
+function frame(element,width,height){if(!width||!height)throw Error('영상을 읽을 수 없습니다.');canvas.width=backing.width=width;canvas.height=backing.height=height;backing.getContext('2d').drawImage(element,0,0,width,height);ready=true;draw();status.textContent=`${width} × ${height} · 영역 ${roi.length}점 · 결승선 ${line.length}점`;}
+function reset(){roi=[];line=[];direction=null;draw();}
+document.querySelectorAll('[data-mode]').forEach(b=>b.onclick=()=>{mode=b.dataset.mode;document.querySelectorAll('[data-mode]').forEach(x=>x.classList.toggle('active',x===b));status.textContent=mode==='roi'?'영역 가장자리를 순서대로 클릭하세요.':mode==='line'?'결승선 양 끝을 클릭하세요.':'선을 넘은 뒤 도착할 쪽을 클릭하세요.';});
+canvas.onclick=e=>{if(!ready)return;const r=canvas.getBoundingClientRect(),p=[Math.max(0,Math.min(1,(e.clientX-r.left)/r.width)),Math.max(0,Math.min(1,(e.clientY-r.top)/r.height))];if(mode==='roi'){if(roi.length===32){status.textContent='영역은 최대 32점입니다.';return;}roi.push(p);}else if(mode==='line'){if(line.length===2){line=[];direction=null;}line.push(p);}else{if(line.length!==2){status.textContent='결승선부터 지정하세요.';return;}direction=p;}draw();status.textContent=`영역 ${roi.length}점 · 결승선 ${line.length}점 · 방향 ${direction?'지정됨':'미지정'}`;};
+document.querySelector('#undo').onclick=()=>{if(mode==='roi')roi.pop();else if(mode==='line'){line.pop();direction=null;}else direction=null;draw();};
+document.querySelector('#clear').onclick=reset;
+document.querySelector('#practice').onclick=()=>{video.pause();video.hidden=document.querySelector('#freeze').hidden=true;ready=false;reset();sourceName='practice-scene';const scene=document.createElement('canvas');scene.width=640;scene.height=480;const c=scene.getContext('2d');c.fillStyle='#334155';c.fillRect(0,0,640,480);c.strokeStyle='#64748b';for(let y=80;y<480;y+=80){c.beginPath();c.moveTo(0,y);c.lineTo(640,y);c.stroke();}c.strokeStyle='white';c.lineWidth=6;c.beginPath();c.moveTo(80,180);c.lineTo(560,180);c.stroke();frame(scene,640,480);status.textContent='클릭 연습용 화면입니다. 실제 영상·웹캠에서는 다시 설정하세요.';};
+document.querySelector('#media').onchange=e=>{const f=e.target.files[0];if(!f)return;video.pause();video.removeAttribute('src');if(url)URL.revokeObjectURL(url);url=URL.createObjectURL(f);sourceName=f.name;ready=false;reset();video.hidden=document.querySelector('#freeze').hidden=true;if(f.type.startsWith('video/')){video.hidden=document.querySelector('#freeze').hidden=false;video.src=url;video.onloadeddata=()=>frame(video,video.videoWidth,video.videoHeight);video.onerror=()=>status.textContent='이 브라우저에서 영상을 열 수 없습니다. H.264 MP4를 사용해보세요.';}else{const img=new Image();img.onload=()=>frame(img,img.naturalWidth,img.naturalHeight);img.onerror=()=>status.textContent='사진을 읽을 수 없습니다.';img.src=url;}};
+document.querySelector('#freeze').onclick=()=>{video.pause();frame(video,video.videoWidth,video.videoHeight);};
+document.querySelector('#config').onchange=async e=>{try{if(!ready)throw Error('먼저 같은 구도의 사진이나 영상을 열어주세요.');const c=valid(JSON.parse(await e.target.files[0].text()));if(Math.abs((canvas.width/canvas.height)/(c.reference_size[0]/c.reference_size[1])-1)>.01)throw Error('화면 비율이 다릅니다. 이 영상에서 다시 설정하세요.');roi=c.roi;line=c.finish_line;direction=c.finish_direction_point;draw();status.textContent='설정을 불러왔습니다. 배경 구도가 같은지 확인하세요.';}catch(err){status.textContent=err.message;}};
+document.querySelector('#save').onclick=()=>{try{const c=valid(config()),text=JSON.stringify(c,null,2)+'\n';document.querySelector('#jsonOutput').value=text;document.querySelector('#jsonPanel').hidden=false;document.querySelector('#jsonPanel').open=true;const blob=new Blob([text],{type:'application/json'}),u=URL.createObjectURL(blob),a=document.createElement('a');a.href=u;a.download='calibration.json';a.click();setTimeout(()=>URL.revokeObjectURL(u),1000);status.textContent='설정 JSON을 만들었습니다. 파일을 저장한 뒤 Jetson에 복사하고 --config로 지정하세요.';}catch(e){status.textContent=e.message;}};
+</script>
+</html>
