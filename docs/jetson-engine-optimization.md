@@ -69,7 +69,9 @@ PyTorch 경로에서는 TensorRT를 import하지 않는다.
 웹을 추가해도 최종 게임 판정 책임을 Jetson이나 중계 서버로 옮기지 않는다.
 추론·게임 판정 주기와 화면 전송 주기를 분리하고, 보는 사람이 늘어도 추론을 중복 실행하지 않는다.
 웹 미리보기 인코딩/전송도 비용이 있으므로 켜짐/꺼짐 조건의 지연을 비교해야 한다.
-현재 웹 스트리밍 서버는 구현 전이며, 이번 변경은 추론 엔진 선택과 비교 도구다.
+웹 스트리밍 서버는 `jetson/web_server.py`에 구현했다. 최신 검출 프레임의 JPEG를 최대 5Hz로 공유하고
+JSON 상태 API와 SQLite 게임 조회를 제공한다. [실행·DB 연결 범위](web-monitor.md)를 참고한다.
+Pi 관측 전송·게임 상태 저장 수신 연결과 웹 켜짐/꺼짐 정량 비교는 후속 작업이다.
 
 구현 시 참고: [Flask 스트리밍 응답](https://flask.palletsprojects.com/en/stable/patterns/streaming/),
 [브라우저 WebRTC API](https://developer.mozilla.org/en-US/docs/Web/API/WebRTC_API).
