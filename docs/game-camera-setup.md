@@ -81,3 +81,21 @@ Q는 종료입니다. `--loop`는 끝에서 자동 반복하며 추적기를 초
 - 저장한 표시 프레임에서 게임 영역·결승선·방향·영상 시간 표시 확인.
 - 설정을 적용한 실제 웹캠 3프레임 검사에서 관측 1회가 Pi C 클라이언트까지 왕복 ACK 통과.
 - 실제 Jetson 데스크톱의 키보드 일시정지 조작과 폰 영상 정확도는 사용자 영상 준비 후 확인 필요.
+
+## 전체 영상 분석 기록
+
+`jetson/analyze_video.py`는 영상 전체에서 검출 박스·임시 추적 ID·발 위치·ROI 여부를
+`frames.jsonl`에 기록하고, 표시 영상·샘플 이미지·요약 `report.json`을 만듭니다.
+Pi에는 접속하지 않으며 통과·움직임·탈락 판정을 하지 않습니다.
+
+```bash
+/home/jetson/yolo_v8/bin/python jetson/analyze_video.py \
+  --video data/video-tests/20261006-141148/20261006_141148.mp4 \
+  --config data/video-tests/20261006-141148/calibration.json \
+  --imgsz 640 --output .runtime/video-20261006-141148-640
+```
+
+표시 영상의 원본 출력은 MPEG-4 코덱입니다. 브라우저 확인용은 H.264로 변환합니다.
+현재 분석 시간에는 모델 준비·원본 디코딩·화면 파일 저장이 포함되므로 실제 웹캠 FPS와 다릅니다.
+
+실제 첫 촬영 영상의 [검출 비교·설정 적용 결과](video-test-20261006.md)를 기록했습니다.
