@@ -102,8 +102,11 @@ REAR는 Pi의 명령이며, STM의 완료 응답은 반드시 MOTOR@REAR@OK로 �
 ### Step 5. 게임 중단
 
 1. STM 중단 버튼 → `[PI]STOP` 송신.
-2. Pi는 게임 진행/랜덤 타이머를 중단하고 STM·JETSON·ARD에 각각 STOP을 송신한다.
-3. 진행 중 회전의 처리와 재시작 방식은 STM 팀원과 합의한다.
+2. Pi는 게임 진행/랜덤 타이머를 중단하고 Jetson을 IDLE(판정 대기)로 전환한다.
+3. Pi는 STM에 MOTOR@REAR를 요청한다. MOTOR@REAR@OK와 Jetson IDLE 적용 확인
+   전에는 새 시작을 차단한다. 완료 미확인 시 재시도하며 자동으로 경기를 재개하지 않는다.
+   시험 모드에 구현했다. ARD/LCD STOP 및 최종 게임 DB 결과 보존은 후속 구현 범위다.
+   진행 중 모터 명령의 처리 우선순위는 STM 펌웨어 담당과 확인한다.
 4. STOP을 RESET으로 해석하지 않는다. 리셋은 별도 동작/명령이며 결과 보존·타이머 초기화
    범위와 정상 종료 조건(시간 만료/전원 통과 또는 탈락)은 후속 확정한다.
 
@@ -124,7 +127,7 @@ STM 방향별 완료 응답 형식과 구분한다.
 | Pi | `[JETSON]PHASE@MOVE` | Jetson 수신 `[PI]PHASE@MOVE` → 움직임 허용 |
 | Jetson | `[PI]COUNT@total@pass@fail` (기존 시험) | Pi 검증 → STM/ARD에 각각 COUNT |
 | Pi | `[STM]COUNT@...`, `[ARD]COUNT@...` | 두 보드는 각각 `[PI]COUNT@...` 수신 |
-| STM | `[PI]STOP` | Pi 중단 처리 → STM/JETSON/ARD에 각각 STOP |
+| STM | `[PI]STOP` | Pi 중단 → Jetson IDLE → STM REAR 복귀/완료 확인 → 새 START 대기 |
 
 서버의 단순 중계와 Pi 클라이언트가 생성하는 명령을 구분한다.
 “두 보드에 브로드캐스트”는 Pi 클라이언트가 목적지별 패킷을 두 번 전송한다는 의미다.

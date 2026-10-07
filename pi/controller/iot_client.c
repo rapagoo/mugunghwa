@@ -224,7 +224,10 @@ int main(int argc, char *argv[])
     size_t input_used = 0;
     char input_line[32];
     cycle_request = (unsigned int)time(NULL) ^ (unsigned int)getpid();
-    if(cycle_enabled) puts("CYCLE READY: STM START or type start; stop cancels; no audio/results");
+    if(cycle_enabled) {
+        puts("CYCLE READY: STM START or type start; stop returns rear; no audio/results");
+        cycle_recover(sock);
+    }
     fflush(stdout);
     while(1) {
         if(cycle_enabled) {

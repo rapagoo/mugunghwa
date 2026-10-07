@@ -58,6 +58,13 @@ def main():
             def start():controller.stdin.write('start\n');controller.stdin.flush()
             def expect(data):
                 line=stream.readline();assert line==data,(line,data)
+            # Startup cannot start until rear recovery is acknowledged.
+            conn.settimeout(10)
+            start()
+            expect(b'[PI]MOTOR@REAR\n')
+            assert 'START_BLOCKED' in ctlpath.read_text()
+            conn.sendall(b'[PI]MOTOR@REAR@OK\n')
+            wait_until(lambda:(monitor.cycle_snapshot()['cycle'] or {}).get('stage')=='HOME')
             # Normal cycle, wrong direction and duplicate ACK cannot advance state.
             start();expect(b'[PI]MOTOR@FRONT\n')
             wait_until(lambda:(monitor.cycle_snapshot()['cycle'] or {}).get('motor')=='FRONT_WAIT')
@@ -74,23 +81,44 @@ def main():
             wait_until(lambda:'CYCLE DONE' in ctlpath.read_text());assert monitor.get_trial()['phase']=='move'
             wait_until(lambda:(monitor.cycle_snapshot()['cycle'] or {}).get('stage')=='DONE')
             assert monitor.cycle_snapshot()['cycle']['motor']=='REAR_OK'
-            # Missing motor ACK aborts rather than issuing REAR.
+            # Missing motor ACK aborts and requests rear recovery.
             start();expect(b'[PI]MOTOR@FRONT\n')
             wait_until(lambda:'completion timeout' in ctlpath.read_text())
             wait_until(lambda:monitor.get_trial()['phase']=='idle')
+            expect(b'[PI]MOTOR@REAR\n')
+            conn.sendall(b'[PI]MOTOR@REAR@OK\n')
+            wait_until(lambda:(monitor.cycle_snapshot()['cycle'] or {}).get('stage')=='HOME')
             # Operator stop, then a late completion must not restart STOP.
             start();expect(b'[PI]MOTOR@FRONT\n')
             controller.stdin.write('stop\n');controller.stdin.flush()
             wait_until(lambda:'operator stop' in ctlpath.read_text())
             conn.sendall(b'[PI]MOTOR@FRONT@OK\n');time.sleep(.3)
             assert monitor.get_trial()['phase']=='idle'
+            expect(b'[PI]MOTOR@REAR\n')
+            start()
+            conn.close();stream.close();conn=None
+            wait_until(lambda:(monitor.cycle_snapshot()['cycle'] or {}).get('stage')=='RECOVERY_WAIT')
+            conn=socket.create_connection(('127.0.0.1',args.port),timeout=10)
+            conn.sendall(b'[STM:PASSWD]');stream=conn.makefile('rb');assert b'New connected!' in stream.readline()
+            expect(b'[PI]MOTOR@REAR\n')
+            conn.sendall(b'[PI]MOTOR@FRONT@OK\n');time.sleep(.1)
+            assert monitor.cycle_snapshot()['cycle']['stage']!='HOME'
+            conn.sendall(b'[PI]MOTOR@REAR@OK\n')
+            wait_until(lambda:(monitor.cycle_snapshot()['cycle'] or {}).get('stage')=='HOME')
+            # Physical STM STOP cancels HOLD; repeated STOP must not queue extra motor commands.
+            start();expect(b'[PI]MOTOR@FRONT\n');conn.sendall(b'[PI]MOTOR@FRONT@OK\n')
+            wait_until(lambda:monitor.get_trial()['phase']=='stop')
+            conn.sendall(b'[PI]STOP\n[PI]STOP\n')
+            expect(b'[PI]MOTOR@REAR\n')
+            conn.sendall(b'[PI]MOTOR@REAR@OK\n')
+            wait_until(lambda:(monitor.cycle_snapshot()['cycle'] or {}).get('stage')=='HOME')
             # Loss of Pi pings must clear Jetson's active phase.
             start();expect(b'[PI]MOTOR@FRONT\n');conn.sendall(b'[PI]MOTOR@FRONT@OK\n')
             wait_until(lambda:monitor.get_trial()['phase']=='stop')
             controller.terminate();controller.wait(timeout=3)
             wait_until(lambda:monitor.get_trial()['phase']=='idle',timeout=5)
             wait_until(lambda:not monitor.cycle_snapshot()['healthy'],timeout=5)
-            print('PASS cycle: real C + TCP server + Python bridge + HTTP applied phase; wrong/duplicate/split ACK, timeout, stop/late ACK, Pi heartbeat loss')
+            print('PASS cycle: startup rear gate, STM/operator STOP recovery, repeated STOP, late/wrong ACK, disconnect/reconnect retry, normal cycle, Pi heartbeat loss')
         finally:
             if conn:conn.close()
             for proc in reversed(processes):
