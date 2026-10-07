@@ -7,7 +7,7 @@ SOURCE = iot_client.c
 .PHONY: all clean
 all: $(TARGET)
 
-$(TARGET): $(SOURCE)
+$(TARGET): $(SOURCE) cycle_trial.h
 	$(CC) $(CFLAGS) -o $@ $< $(LDLIBS)
 
 clean:

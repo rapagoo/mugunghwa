@@ -9,6 +9,7 @@
 #include <arpa/inet.h>
 #include <sys/socket.h>
 #include <sys/time.h>
+#include <sys/select.h>
 
 #define LINE_SIZE 101
 #define PENDING_SIZE 32
@@ -121,12 +122,15 @@ static int observation(int sock, const char *payload)
     return 1;
 }
 
+#include "cycle_trial.h"
+
 static void handle_line(int sock, char *line, int target_mask)
 {
     char *closing = strchr(line, ']');
     if(line[0] != '[' || !closing) { puts("IGNORE malformed message"); return; }
     *closing = '\0';
     const char *sender = line + 1, *payload = closing + 1;
+    if(cycle_line(sock, sender, payload)) return;
     int counts[3];
     double now = monotonic_seconds();
     for(int i = 0; i < PENDING_SIZE; i++)
@@ -167,14 +171,22 @@ static void handle_line(int sock, char *line, int target_mask)
 int main(int argc, char *argv[])
 {
     int target_mask = 3;
-    if(argc != 4 && argc != 6)
-        fail("Usage: iot_client <IP> <port> PI [--target BOTH|ARD|STM]");
+    if(argc < 4)
+        fail("Usage: iot_client <IP> <port> PI [--target BOTH|ARD|STM] [--cycle-test] [--hold-seconds 5] [--ack-timeout 10]");
     if(strcmp(argv[3], "PI")) fail("Pi controller must log in as PI");
-    if(argc == 6) {
-        if(strcmp(argv[4], "--target")) fail("Unknown option");
-        if(!strcmp(argv[5], "ARD")) target_mask = 1;
-        else if(!strcmp(argv[5], "STM")) target_mask = 2;
-        else if(strcmp(argv[5], "BOTH")) fail("Target must be BOTH, ARD or STM");
+    for(int i=4; i<argc; i++) {
+        if(!strcmp(argv[i], "--cycle-test")) { cycle_enabled = 1; continue; }
+        if(i+1 >= argc) fail("Missing option value");
+        const char *option = argv[i], *value = argv[++i];
+        if(!strcmp(option, "--target")) {
+            if(!strcmp(value, "ARD")) target_mask = 1;
+            else if(!strcmp(value, "STM")) target_mask = 2;
+            else if(strcmp(value, "BOTH")) fail("Target must be BOTH, ARD or STM");
+        } else if(!strcmp(option,"--hold-seconds") || !strcmp(option,"--ack-timeout")) {
+            char *tail; double n = strtod(value, &tail);
+            if(!*value || *tail || !(n >= .2 && n <= 120)) fail("Duration must be 0.2..120 seconds");
+            if(!strcmp(option,"--hold-seconds")) cycle_hold=n; else cycle_timeout=n;
+        } else fail("Unknown option");
     }
     char *end;
     errno = 0;
@@ -208,7 +220,33 @@ int main(int argc, char *argv[])
            target_mask == 3 ? "ARD,STM" : targets[target_mask == 1 ? 0 : 1]);
     fflush(stdout);
     used = 0;
+    int input_active = cycle_enabled;
+    size_t input_used = 0;
+    char input_line[32];
+    cycle_request = (unsigned int)time(NULL) ^ (unsigned int)getpid();
+    if(cycle_enabled) puts("CYCLE READY: STM START or type start; stop cancels; no audio/results");
+    fflush(stdout);
     while(1) {
+        if(cycle_enabled) {
+            fd_set readers; FD_ZERO(&readers); FD_SET(sock,&readers);
+            if(input_active) FD_SET(STDIN_FILENO,&readers);
+            struct timeval tick = {0,100000};
+            int ready = select(sock+1,&readers,NULL,NULL,&tick);
+            if(ready < 0 && errno == EINTR) continue;
+            if(ready < 0) fail("select failed");
+            if(input_active && FD_ISSET(STDIN_FILENO,&readers)) {
+                char c; ssize_t n = read(STDIN_FILENO,&c,1);
+                if(n <= 0) input_active=0;
+                else if(c=='\n') {
+                    input_line[input_used]='\0';
+                    if(!strcmp(input_line,"start")) cycle_start(sock);
+                    else if(!strcmp(input_line,"stop")) cycle_abort(sock,"operator stop");
+                    input_used=0;
+                } else if(c!='\r' && input_used < sizeof(input_line)-1) input_line[input_used++]=c;
+            }
+            cycle_tick(sock); fflush(stdout);
+            if(!FD_ISSET(sock,&readers)) continue;
+        }
         char buffer[256];
         ssize_t n = recv(sock, buffer, sizeof(buffer), 0);
         if(n < 0 && errno == EINTR) continue;
