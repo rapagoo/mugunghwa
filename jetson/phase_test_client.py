@@ -76,6 +76,7 @@ def session(host, port, web):
                         if trial.get('phase') != expected['phase'] or trial.get('version') != expected['version']:
                             reason = reason or 'web phase changed outside Pi controller'
                     healthy = reason is None
+                    web_json(web, '/api/cycle', {'health':healthy, 'reason':reason or 'ready'})
                     health = reason or 'ready'
                     if health != last_health:
                         print('HEALTH '+health, flush=True); last_health = health
@@ -87,6 +88,8 @@ def session(host, port, web):
                     if health != last_health:
                         print('HEALTH '+health, flush=True); last_health = health
                     send('TRIAL@ERROR')
+                    try: web_json(web, '/api/cycle', {'health':False, 'reason':health[:200]})
+                    except Exception: pass
                     try: apply_phase(web,'IDLE')
                     except Exception: pass
                     expected = None
@@ -104,6 +107,15 @@ def session(host, port, web):
                 text = line.decode('ascii').rstrip('\r')
                 if text == '[PI]TRIAL@PING':
                     last_ping = time.monotonic(); continue
+                report = re.fullmatch(r'\[PI\]CYCLE@([0-9a-f]{8})@([A-Z_]+)@([A-Z_]+)@(\d{1,6})@([A-Z_]+)', text)
+                if report:
+                    token, stage, motor, remaining, error = report.groups()
+                    try:
+                        web_json(web, '/api/cycle', dict(token=token,stage=stage,motor=motor,
+                            remaining_ms=int(remaining),error=error))
+                    except Exception as error:
+                        print('CYCLE_REPORT_ERROR '+str(error),flush=True)
+                    continue
                 if text == '[PI]STOP':
                     expected = apply_phase(web,'IDLE'); continue
                 match = re.fullmatch(r'\[PI\]PHASE@(MOVE|STOP|IDLE)@([0-9a-f]{8})',text)

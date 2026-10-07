@@ -20,6 +20,41 @@ class Monitor:
         self.reset_generation = 0
         self.trial_command = dict(version=0,phase='idle',requested_at=time.monotonic())
         self.state = dict(source=source, state='preparing', error=None)
+        self.cycle = None
+        self.cycle_at = self.cycle_health_at = None
+        self.cycle_health = False
+        self.cycle_reason = 'bridge not connected'
+
+    def set_cycle(self, body):
+        if not isinstance(body, dict): raise ValueError('Expected object')
+        with self.condition:
+            if set(body) == {'health', 'reason'}:
+                if type(body['health']) is not bool or not isinstance(body['reason'],str) or len(body['reason'])>200:
+                    raise ValueError('Invalid health')
+                self.cycle_health, self.cycle_reason = body['health'], body['reason']
+                self.cycle_health_at = time.monotonic()
+            elif set(body) == {'token','stage','motor','remaining_ms','error'}:
+                if (body['stage'] not in ('IDLE','MOVE_PREP','FRONT_WAIT','STOP_APPLY','HOLD','REAR_WAIT','MOVE_APPLY','DONE','ERROR')
+                    or body['motor'] not in ('UNKNOWN','FRONT_WAIT','FRONT_OK','REAR_WAIT','REAR_OK')
+                    or body['error'] not in ('NONE','STM_STOP','OPERATOR_STOP','ACK_TIMEOUT','HEARTBEAT_LOST','JETSON_ERROR')
+                    or not isinstance(body['token'],str) or len(body['token']) != 8
+                    or any(c not in '0123456789abcdef' for c in body['token'])
+                    or type(body['remaining_ms']) is not int or not 0 <= body['remaining_ms'] <= 120000):
+                    raise ValueError('Invalid cycle')
+                self.cycle = dict(body); self.cycle_at = time.monotonic()
+            else: raise ValueError('Invalid cycle fields')
+
+    def cycle_snapshot(self):
+        with self.condition:
+            now = time.monotonic()
+            age = None if self.cycle_at is None else (now-self.cycle_at)*1000
+            healthy = self.cycle_health and self.cycle_health_at is not None and now-self.cycle_health_at <= 3
+            completed = self.state.get('completed_wall')
+            fresh = (self.state.get('state') == 'running' and self.state.get('pose',{}).get('enabled')
+                     and completed is not None and now-completed <= 2)
+            return dict(cycle=None if self.cycle is None else dict(self.cycle), age_ms=age,
+                        healthy=bool(healthy and age is not None and age<=2000 and fresh), reason=self.cycle_reason,
+                        applied_phase=self.state.get('pose_trial',{}).get('phase','idle'))
 
     def update(self, data, jpeg=None, camera_jpeg=None):
         with self.condition:
@@ -119,7 +154,11 @@ def create_server(host, port, monitor, database, calibration=None, recorder=None
         def do_GET(self):
             route = self.path.split('?', 1)[0]
             try:
-                if route in ('/', '/app.js', '/style.css', '/calibrate', '/calibrate.js', '/validation.js','/recording.js'):
+                if route == '/cycle.js':
+                    self.send((static/'cycle.js').read_bytes(), 'text/javascript; charset=utf-8')
+                elif route == '/api/cycle':
+                    self.send(json.dumps(monitor.cycle_snapshot()).encode(), 'application/json')
+                elif route in ('/', '/app.js', '/style.css', '/calibrate', '/calibrate.js', '/validation.js','/recording.js'):
                     name, mime = {'/': ('index.html','text/html; charset=utf-8'),
                                   '/app.js': ('app.js','text/javascript; charset=utf-8'),
                                   '/style.css': ('style.css','text/css; charset=utf-8'),
@@ -170,8 +209,12 @@ def create_server(host, port, monitor, database, calibration=None, recorder=None
                 self.send(b'Database unavailable', 'text/plain', 503)
 
         def do_POST(self):
-            if self.path not in ('/api/calibration','/api/validation/reset','/api/validation/phase','/api/recording/start','/api/recording/stop') or (self.path == '/api/calibration' and calibration is None):
+            if self.path not in ('/api/cycle','/api/calibration','/api/validation/reset','/api/validation/phase','/api/recording/start','/api/recording/stop') or (self.path == '/api/calibration' and calibration is None):
                 self.send(b'Not found', 'text/plain', 404)
+                return
+            if self.path == '/api/cycle' and self.client_address[0] not in ('127.0.0.1','::1'):
+                self.close_connection = True
+                self.send(b'Local bridge only', 'text/plain', 403)
                 return
             # JSON + same-origin browser request, not form submissions from other sites.
             if (self.headers.get('Content-Type', '').split(';')[0] != 'application/json'
@@ -190,6 +233,10 @@ def create_server(host, port, monitor, database, calibration=None, recorder=None
                     raise ValueError('Invalid request length')
                 self.connection.settimeout(5)
                 body = json.loads(self.rfile.read(length))
+                if self.path == '/api/cycle':
+                    monitor.set_cycle(body)
+                    self.send(b'{}','application/json')
+                    return
                 if self.path.startswith('/api/recording/'):
                     if recorder is None:
                         self.send(b'Recorder unavailable','text/plain',503)

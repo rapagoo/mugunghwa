@@ -6,6 +6,7 @@ import sys
 import tempfile
 import threading
 import unittest
+from unittest.mock import patch
 from urllib.request import urlopen
 from urllib.error import HTTPError
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'jetson'))
@@ -14,6 +15,21 @@ from game.mariadb_store import DatabaseUnavailable
 
 
 class WebTests(unittest.TestCase):
+    def test_cycle_display_cannot_remain_healthy_after_heartbeat_or_inference_loss(self):
+        monitor=Monitor('camera')
+        with patch('game.web.time.monotonic',return_value=10):
+            monitor.update(dict(state='running',pose={'enabled':True},completed_wall=10,
+                                pose_trial={'phase':'stop'}))
+            monitor.set_cycle(dict(token='12345678',stage='HOLD',motor='FRONT_OK',remaining_ms=4000,error='NONE'))
+            monitor.set_cycle(dict(health=True,reason='ready'))
+            self.assertTrue(monitor.cycle_snapshot()['healthy'])
+            self.assertEqual(monitor.cycle_snapshot()['applied_phase'],'stop')
+        with patch('game.web.time.monotonic',return_value=14):
+            self.assertFalse(monitor.cycle_snapshot()['healthy'])
+            monitor.set_cycle(dict(token='12345678',stage='HOLD',motor='FRONT_OK',remaining_ms=0,error='NONE'))
+            monitor.set_cycle(dict(health=True,reason='ready'))
+            self.assertFalse(monitor.cycle_snapshot()['healthy'])  # Inference still stale.
+
     def test_database_failure_does_not_expose_details_or_break_preview(self):
         class FailedDatabase:
             def snapshot(self):

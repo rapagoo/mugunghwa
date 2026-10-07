@@ -60,7 +60,10 @@ def main():
                 line=stream.readline();assert line==data,(line,data)
             # Normal cycle, wrong direction and duplicate ACK cannot advance state.
             start();expect(b'[PI]MOTOR@FRONT\n')
+            wait_until(lambda:(monitor.cycle_snapshot()['cycle'] or {}).get('motor')=='FRONT_WAIT')
             conn.sendall(b'[JETSON]PHASE@STOP@deadbeef\n');time.sleep(.1)
+            conn.sendall(b'[JETSON]CYCLE@deadbeef@DONE@REAR_OK@0@NONE\n');time.sleep(.1)
+            assert monitor.cycle_snapshot()['cycle']['motor']=='FRONT_WAIT'
             assert monitor.get_trial()['phase']=='move'  # STM cannot impersonate PI.
             conn.sendall(b'[PI]MOTOR@REAR@OK\n');time.sleep(.1)
             assert monitor.get_trial()['phase']=='move'
@@ -69,6 +72,8 @@ def main():
             expect(b'[PI]MOTOR@REAR\n');assert monitor.get_trial()['phase']=='stop'
             conn.sendall(b'[PI]MOTOR@REAR@OK\n')
             wait_until(lambda:'CYCLE DONE' in ctlpath.read_text());assert monitor.get_trial()['phase']=='move'
+            wait_until(lambda:(monitor.cycle_snapshot()['cycle'] or {}).get('stage')=='DONE')
+            assert monitor.cycle_snapshot()['cycle']['motor']=='REAR_OK'
             # Missing motor ACK aborts rather than issuing REAR.
             start();expect(b'[PI]MOTOR@FRONT\n')
             wait_until(lambda:'completion timeout' in ctlpath.read_text())
@@ -84,6 +89,7 @@ def main():
             wait_until(lambda:monitor.get_trial()['phase']=='stop')
             controller.terminate();controller.wait(timeout=3)
             wait_until(lambda:monitor.get_trial()['phase']=='idle',timeout=5)
+            wait_until(lambda:not monitor.cycle_snapshot()['healthy'],timeout=5)
             print('PASS cycle: real C + TCP server + Python bridge + HTTP applied phase; wrong/duplicate/split ACK, timeout, stop/late ACK, Pi heartbeat loss')
         finally:
             if conn:conn.close()
