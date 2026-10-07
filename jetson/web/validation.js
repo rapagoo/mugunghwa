@@ -3,7 +3,8 @@ const testLabels={new_id:'새 ID',missing:'미검출',reappeared:'같은 ID 재�
                   roi_enter:'구역 진입',roi_exit:'구역 이탈',finish_candidate:'결승선 통과 후보'};
 const testCases={roi_inside:'1 · 구역 안/먼 거리',roi_outside:'1 · 구역 밖/경계',
   forward:'2 · 지정 방향 통과',reverse:'2 · 반대 방향 통과',extension:'2 · 선 끝 바깥 통과',
-  jitter:'2 · 선 주변 정지/흔들림',crossing:'3 · 두 사람 교차',occlusion:'3 · 가림 후 재등장'};
+  jitter:'2 · 선 주변 정지/흔들림',crossing:'3 · 두 사람 교차',occlusion:'3 · 가림 후 재등장',
+  motion:'4 · 움직임/정지',stop_trial:'5 · 정지 지시 중 움직임'};
 let latestValidation=null,validationReceivedAt=0,manualRecords=[];
 
 function renderValidation(v) {
@@ -12,6 +13,11 @@ function renderValidation(v) {
   validationReceivedAt=performance.now();
   document.getElementById('reset-validation').disabled=v.state!=='running';
   if (!t) return;
+  const m=v.motion_trial;
+  if(m) {
+    put('motion-phase',`시험 상태: ${{idle:'대기',move:'이동 허용',stop:'정지 지시'}[m.phase]} · 유예 ${m.grace_remaining_s}초 · 요청 ${m.version}`);
+    rows('motion-events',[...m.events].reverse().map(e=>[`ID ${e.track_id} · 시험용 탈락 후보`,`정지 지시 후 ${e.after_stop_s}초`]),'시험용 탈락 후보 없음');
+  }
   document.getElementById('test-session').textContent=
     `시험 ${t.session.number} · ${t.elapsed_s}초 · ${t.frames}회 검출 · 설정 ${t.session.calibration_revision}`;
   put('roi-inside',v.roi_people??'—'); put('roi-outside',v.outside_people??'—');
@@ -22,8 +28,11 @@ function renderValidation(v) {
     const row=document.createElement('tr');
     const side={approach:'접근 쪽',destination:'도착 쪽',line:'선 주변'}[o.line_side]||'미설정';
     const state=o.candidate?'통과 후보':o.pending?'선 넘음 · 여유 폭 확인 중':o.armed?'접근 확인됨':'접근 확인 대기';
+    const motion=m?.observations.find(p=>p.track_id===o.track_id);
     for (const value of [o.track_id??'미지정',o.confidence==null?'—':`${Math.round(o.confidence*100)}%`,
-       o.in_roi==null?'미설정':o.in_roi?'안':'밖',`${o.foot[0].toFixed(3)}, ${o.foot[1].toFixed(3)}`,side,o.line_side?state:'미설정']) {
+       o.in_roi==null?'미설정':o.in_roi?'안':'밖',`${o.foot[0].toFixed(3)}, ${o.foot[1].toFixed(3)}`,side,o.line_side?state:'미설정',
+       motion?`${{pending:'판정 대기',moving:'이동',still:'정지'}[motion.status]} (${motion.score??'—'})`:'—',
+       motion?.stop_candidate?'시험용 탈락 후보':motion?.stop_baseline_ready?'정지 감시 중':'기준 준비/대기']) {
       const cell=document.createElement('td');cell.textContent=value;row.append(cell);
     }
     body.append(row);
@@ -44,6 +53,17 @@ resetButton.onclick=async()=>{
     put('test-message',`초기화 요청 ${request.requested_reset} · 다음 검출부터 새 시험입니다. 관찰 기록은 유지됩니다.`);
   } catch(error) { put('test-message',error.message); }
 };
+for(const phase of ['idle','move','stop']) {
+  document.getElementById('phase-'+phase).onclick=async()=>{
+    try {
+      const response=await fetch('/api/validation/phase',{method:'POST',headers:{'Content-Type':'application/json',
+        'X-Mugunghwa-Calibration':'1'},body:JSON.stringify({phase})});
+      if(!response.ok) throw Error('시험 상태 변경 실패');
+      const command=await response.json();
+      put('test-message',`시험 상태 요청 ${command.version} · 다음 검출에서 적용됩니다.`);
+    } catch(error) {put('test-message',error.message);}
+  };
+}
 document.getElementById('record-validation').onclick=()=>{
   if (!latestValidation?.validation || latestValidation.state!=='running' ||
       latestValidation.result_age_ms+performance.now()-validationReceivedAt>2000) {

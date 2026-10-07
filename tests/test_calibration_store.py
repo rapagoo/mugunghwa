@@ -69,6 +69,12 @@ class CalibrationTests(unittest.TestCase):
             with urlopen(Request(url+'/api/validation/reset',data=b'{}',headers=headers)) as response:
                 self.assertEqual(json.load(response)['requested_reset'],1)
             self.assertEqual(monitor.reset_version(),1)
+            with urlopen(Request(url+'/api/validation/phase',data=b'{"phase":"stop"}',headers=headers)) as response:
+                self.assertEqual(json.load(response)['phase'],'stop')
+            self.assertEqual(monitor.get_trial()['phase'],'stop')
+            with self.assertRaises(HTTPError) as error:
+                urlopen(Request(url+'/api/validation/phase',data=b'{"phase":"invalid"}',headers=headers))
+            self.assertEqual(error.exception.code,400)
             self.assertEqual(self.store.snapshot()['config'],CONFIG)
         finally:
             monitor.close(); server.shutdown(); server.server_close(); thread.join()

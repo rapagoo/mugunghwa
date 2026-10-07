@@ -18,6 +18,7 @@ class Monitor:
         self.serial = 0
         self.closed = False
         self.reset_generation = 0
+        self.trial_command = dict(version=0,phase='idle',requested_at=time.monotonic())
         self.state = dict(source=source, state='preparing', error=None)
 
     def update(self, data, jpeg=None, camera_jpeg=None):
@@ -45,11 +46,25 @@ class Monitor:
     def request_reset(self):
         with self.condition:
             self.reset_generation += 1
+            self.trial_command = dict(version=self.trial_command['version']+1,
+                                      phase='idle',requested_at=time.monotonic())
             return self.reset_generation
 
     def reset_version(self):
         with self.condition:
             return self.reset_generation
+
+    def set_trial(self, phase):
+        if phase not in ('idle','move','stop'):
+            raise ValueError('Invalid trial phase')
+        with self.condition:
+            self.trial_command = dict(version=self.trial_command['version']+1,
+                                      phase=phase,requested_at=time.monotonic())
+            return dict(self.trial_command)
+
+    def get_trial(self):
+        with self.condition:
+            return dict(self.trial_command)
 
 
 class GameDatabase:
@@ -152,7 +167,7 @@ def create_server(host, port, monitor, database, calibration=None):
                 self.send(b'Database unavailable', 'text/plain', 503)
 
         def do_POST(self):
-            if self.path not in ('/api/calibration','/api/validation/reset') or (self.path == '/api/calibration' and calibration is None):
+            if self.path not in ('/api/calibration','/api/validation/reset','/api/validation/phase') or (self.path == '/api/calibration' and calibration is None):
                 self.send(b'Not found', 'text/plain', 404)
                 return
             # JSON + same-origin browser request, not form submissions from other sites.
@@ -172,6 +187,12 @@ def create_server(host, port, monitor, database, calibration=None):
                     raise ValueError('Invalid request length')
                 self.connection.settimeout(5)
                 body = json.loads(self.rfile.read(length))
+                if self.path == '/api/validation/phase':
+                    if not isinstance(body,dict) or set(body) != {'phase'}:
+                        raise ValueError('Expected phase only')
+                    command = monitor.set_trial(body['phase'])
+                    self.send(json.dumps(command).encode(), 'application/json')
+                    return
                 if self.path == '/api/validation/reset':
                     if body != {}:
                         raise ValueError('Reset body must be empty object')

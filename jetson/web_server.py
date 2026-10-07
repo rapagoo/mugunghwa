@@ -20,6 +20,7 @@ def run_vision(args, monitor, stop, calibration):
     from game import geometry
     from game.finish import FinishDetector
     from game.validation import VisionValidation
+    from game.motion import MotionTrial
     slot = LatestFrame()
     capture = None
     reader = None
@@ -74,6 +75,7 @@ def run_vision(args, monitor, stop, calibration):
         revision = None
         finish = None
         validation = None
+        motion = None
         reset_version = None
         session_number = 0
         while not stop.is_set():
@@ -99,6 +101,7 @@ def run_vision(args, monitor, stop, calibration):
                 finish = FinishDetector(config) if config else None
                 validation = VisionValidation(config,dict(number=session_number,epoch=current_epoch,
                     calibration_revision=revision,reset_generation=reset_version))
+                motion = MotionTrial()
             start = time.monotonic()
             result = model.track(frame, **options)[0]
             boxes = result.boxes.xyxy.cpu().tolist()
@@ -108,6 +111,8 @@ def run_vision(args, monitor, stop, calibration):
             observed = time.monotonic()
             diagnostics = validation.update(boxes,ids,confidence,width,height,media,finish,
                 None if previous is None else (observed-previous)*1000)
+            motion_result = motion.update(boxes,ids,diagnostics['observations'],width,height,
+                                          source_wall,monitor.get_trial())
             completed = time.monotonic()
             data = dict(state='running', epoch=epoch, media_s=media, people=len(boxes),
                         track_ids=ids, candidates=list(finish.completed.values()) if finish else [],
@@ -121,6 +126,7 @@ def run_vision(args, monitor, stop, calibration):
             data['roi_people'] = sum(geometry.inside([(x1+x2)/2/width,y2/height],config['roi'])
                                      for x1,y1,x2,y2 in boxes) if config else None
             data['validation'] = diagnostics
+            data['motion_trial'] = motion_result
             data['candidates'] = list(finish.completed.values()) if finish else []
             data['outside_people'] = len(boxes)-data['roi_people'] if config else None
             jpeg = None
@@ -138,6 +144,10 @@ def run_vision(args, monitor, stop, calibration):
                     cv2.circle(preview,(round((x1+x2)/2),min(height-1,round(y2))),5,color,-1)
                     label = 'ID {} {}'.format(observation['track_id'] if observation['track_id'] is not None else '?',
                         'CANDIDATE' if observation['candidate'] else 'IN' if observation['in_roi'] else 'OUT' if config else '')
+                    m = motion_result['observations'][i]
+                    label += ' ' + ('STOP-MOVE' if m['stop_candidate'] else m['status'].upper())
+                    if m['stop_candidate']:
+                        color = (60,60,255)
                     cv2.putText(preview,label,(round(x1),max(20,round(y1)-5)),cv2.FONT_HERSHEY_SIMPLEX,.6,color,2)
                 if width > 960:
                     preview = cv2.resize(preview,(960,round(height*960/width)))
