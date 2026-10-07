@@ -14,6 +14,24 @@ function renderValidation(v) {
   document.getElementById('reset-validation').disabled=v.state!=='running';
   if (!t) return;
   const m=v.motion_trial;
+  const pose=v.pose_trial;
+  const poseBody=document.getElementById('pose-rows');poseBody.replaceChildren();
+  const poseReasons={baseline_missing:'정지 시작 때 기준 없음 · 새 정지 지시 필요',
+    pose_unavailable:'관절 모델이 실행 중이 아닙니다',outside_or_finished:'구역 밖 또는 통과 후보',
+    tracking_gap:'추적 공백 · 새 정지 지시 필요',low_confidence:'관절 신뢰도 부족',
+    partial_pose:'팔 관절 일부 확인 불가',
+    motion:'기준 자세에서 변화',below_threshold:'허용 범위',move:'움직임 허용',idle:'시험 대기'};
+  const poseStates={hold:'판정 보류',allowed:'이동 허용',idle:'대기',suspect:'움직임 의심',still:'정지'};
+  for(const p of pose?.observations||[]) {
+    const row=document.createElement('tr');
+    for(const value of [p.track_id??'미지정',poseStates[p.status]||p.status,p.score??'—',
+      poseReasons[p.reason]||p.reason,p.valid_joints,p.stop_candidate?'움직임 후보 기록됨':'—']) {
+      const cell=document.createElement('td');cell.textContent=value;row.append(cell);
+    }
+    poseBody.append(row);
+  }
+  rows('pose-events',[...(pose?.events||[])].reverse().map(e=>
+    [`ID ${e.track_id} · 관절 움직임 후보`, `정지 후 ${e.after_stop_s}초 · 점수 ${e.score}`]),'관절 시험 후보 없음');
   if(m) {
     put('motion-phase',`시험 상태: ${{idle:'대기',move:'이동 허용',stop:'정지 지시'}[m.phase]} · 유예 ${m.grace_remaining_s}초 · 요청 ${m.version}`);
     rows('motion-events',[...m.events].reverse().map(e=>[`ID ${e.track_id} · 시험용 탈락 후보`,`정지 지시 후 ${e.after_stop_s}초`]),'시험용 탈락 후보 없음');

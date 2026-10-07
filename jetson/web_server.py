@@ -21,6 +21,7 @@ def run_vision(args, monitor, stop, calibration, recorder):
     from game.finish import FinishDetector
     from game.validation import VisionValidation
     from game.motion import MotionTrial
+    from game.pose_motion import PoseMotionTrial
     slot = LatestFrame()
     capture = None
     reader = None
@@ -102,6 +103,7 @@ def run_vision(args, monitor, stop, calibration, recorder):
                 validation = VisionValidation(config,dict(number=session_number,epoch=current_epoch,
                     calibration_revision=revision,reset_generation=reset_version))
                 motion = MotionTrial()
+                pose_motion = PoseMotionTrial()
             start = time.monotonic()
             result = model.track(frame, **options)[0]
             boxes = result.boxes.xyxy.cpu().tolist()
@@ -112,8 +114,11 @@ def run_vision(args, monitor, stop, calibration, recorder):
             observed = time.monotonic()
             diagnostics = validation.update(boxes,ids,confidence,width,height,media,finish,
                 None if previous is None else (observed-previous)*1000)
+            trial_command = monitor.get_trial()
             motion_result = motion.update(boxes,ids,diagnostics['observations'],width,height,
-                                          source_wall,monitor.get_trial())
+                                          source_wall,trial_command)
+            pose_result = pose_motion.update(boxes,ids,diagnostics['observations'],keypoints,
+                                             source_wall,trial_command)
             completed = time.monotonic()
             data = dict(state='running', epoch=epoch, media_s=media, people=len(boxes),
                         track_ids=ids, candidates=list(finish.completed.values()) if finish else [],
@@ -128,16 +133,17 @@ def run_vision(args, monitor, stop, calibration, recorder):
                                      for x1,y1,x2,y2 in boxes) if config else None
             data['validation'] = diagnostics
             data['motion_trial'] = motion_result
+            data['pose_trial'] = pose_result
             data['pose'] = dict(enabled=keypoints is not None,
                 visible_keypoints=[sum(k[2]>=.5 for k in person) for person in keypoints] if keypoints is not None else [],
-                motion_method='box_center')
+                motion_method='pose_fixed_baseline' if keypoints is not None else 'box_center')
             data['candidates'] = list(finish.completed.values()) if finish else []
             data['outside_people'] = len(boxes)-data['roi_people'] if config else None
             recorder.submit(dict(media_s=media,source_wall=source_wall,completed_wall=completed,
                 boxes=boxes,ids=ids,confidence=confidence,keypoints=keypoints,
                 interval_ms=data['interval_ms'],processing_ms=data['processing_ms'],
                 result_latency_ms=data['result_latency_ms'],calibration_revision=revision,
-                epoch=epoch,trial=motion_result,source_size=[width,height]),frame)
+                epoch=epoch,trial=motion_result,pose_trial=pose_result,source_size=[width,height]),frame)
             jpeg = None
             camera_jpeg = None
             if completed-last_jpeg >= 1/args.preview_hz:
@@ -168,6 +174,11 @@ def run_vision(args, monitor, stop, calibration, recorder):
                     label += ' ' + ('STOP-MOVE' if m['stop_candidate'] else m['status'].upper())
                     if m['stop_candidate']:
                         color = (60,60,255)
+                    p = pose_result['observations'][i]
+                    if keypoints is not None:
+                        label += ' POSE ' + ('CANDIDATE' if p['stop_candidate'] else p['status'].upper())
+                        if p['stop_candidate']:
+                            color = (60,60,255)
                     cv2.putText(preview,label,(round(x1),max(20,round(y1)-5)),cv2.FONT_HERSHEY_SIMPLEX,.6,color,2)
                 if width > 960:
                     preview = cv2.resize(preview,(960,round(height*960/width)))
