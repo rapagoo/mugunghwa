@@ -11,7 +11,7 @@ from game.realtime import LatestFrame
 from game.calibration_store import CalibrationStore
 
 
-def run_vision(args, monitor, stop, calibration):
+def run_vision(args, monitor, stop, calibration, recorder):
     # Heavy dependencies stay outside HTTP threads and database tests.
     import cv2
     import torch
@@ -133,6 +133,11 @@ def run_vision(args, monitor, stop, calibration):
                 motion_method='box_center')
             data['candidates'] = list(finish.completed.values()) if finish else []
             data['outside_people'] = len(boxes)-data['roi_people'] if config else None
+            recorder.submit(dict(media_s=media,source_wall=source_wall,completed_wall=completed,
+                boxes=boxes,ids=ids,confidence=confidence,keypoints=keypoints,
+                interval_ms=data['interval_ms'],processing_ms=data['processing_ms'],
+                result_latency_ms=data['result_latency_ms'],calibration_revision=revision,
+                epoch=epoch,trial=motion_result,source_size=[width,height]),frame)
             jpeg = None
             camera_jpeg = None
             if completed-last_jpeg >= 1/args.preview_hz:
@@ -215,12 +220,15 @@ def main():
         database = MariaGameDatabase(args.db_config)
     else:
         database = GameDatabase(args.database)
-    server = create_server(args.host,args.port,monitor,database,calibration)
+    from game.recording import TrialRecorder
+    recorder=TrialRecorder('.runtime/pose-recordings')
+    server = create_server(args.host,args.port,monitor,database,calibration,recorder,
+        dict(model=args.model,imgsz=args.imgsz,confidence=.35,preview_hz=args.preview_hz))
     stop = threading.Event()
     def supervise():
         while not stop.is_set():
             monitor.update(dict(state='preparing',error=None))
-            run_vision(args,monitor,stop,calibration)
+            run_vision(args,monitor,stop,calibration,recorder)
             if args.video and monitor.snapshot()['state'] == 'ended':
                 return
             if stop.wait(3):
@@ -237,6 +245,7 @@ def main():
         monitor.close()
         server.server_close()
         worker.join(5)
+        recorder.close()
 
 
 if __name__ == '__main__':

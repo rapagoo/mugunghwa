@@ -101,7 +101,7 @@ class GameDatabase:
                         events=[dict(e) for e in events])
 
 
-def create_server(host, port, monitor, database, calibration=None):
+def create_server(host, port, monitor, database, calibration=None, recorder=None, recording_metadata=None):
     static = Path(__file__).resolve().parents[1] / 'web'
 
     class Handler(BaseHTTPRequestHandler):
@@ -119,17 +119,20 @@ def create_server(host, port, monitor, database, calibration=None):
         def do_GET(self):
             route = self.path.split('?', 1)[0]
             try:
-                if route in ('/', '/app.js', '/style.css', '/calibrate', '/calibrate.js', '/validation.js'):
+                if route in ('/', '/app.js', '/style.css', '/calibrate', '/calibrate.js', '/validation.js','/recording.js'):
                     name, mime = {'/': ('index.html','text/html; charset=utf-8'),
                                   '/app.js': ('app.js','text/javascript; charset=utf-8'),
                                   '/style.css': ('style.css','text/css; charset=utf-8'),
                                   '/calibrate': ('calibrate.html','text/html; charset=utf-8'),
                                   '/calibrate.js': ('calibrate.js','text/javascript; charset=utf-8'),
-                                  '/validation.js': ('validation.js','text/javascript; charset=utf-8')}[route]
+                                  '/validation.js': ('validation.js','text/javascript; charset=utf-8'),
+                                  '/recording.js': ('recording.js','text/javascript; charset=utf-8')}[route]
                     self.send((static/name).read_bytes(), mime)
                 elif route in ('/api/vision', '/api/game'):
                     data = monitor.snapshot() if route == '/api/vision' else database.snapshot()
                     self.send(json.dumps(data, ensure_ascii=False, allow_nan=False).encode(), 'application/json; charset=utf-8')
+                elif route == '/api/recording' and recorder is not None:
+                    self.send(json.dumps(recorder.snapshot()).encode(),'application/json')
                 elif route == '/api/calibration' and calibration is not None:
                     data = calibration.snapshot()
                     state = monitor.snapshot()
@@ -167,7 +170,7 @@ def create_server(host, port, monitor, database, calibration=None):
                 self.send(b'Database unavailable', 'text/plain', 503)
 
         def do_POST(self):
-            if self.path not in ('/api/calibration','/api/validation/reset','/api/validation/phase') or (self.path == '/api/calibration' and calibration is None):
+            if self.path not in ('/api/calibration','/api/validation/reset','/api/validation/phase','/api/recording/start','/api/recording/stop') or (self.path == '/api/calibration' and calibration is None):
                 self.send(b'Not found', 'text/plain', 404)
                 return
             # JSON + same-origin browser request, not form submissions from other sites.
@@ -187,6 +190,25 @@ def create_server(host, port, monitor, database, calibration=None):
                     raise ValueError('Invalid request length')
                 self.connection.settimeout(5)
                 body = json.loads(self.rfile.read(length))
+                if self.path.startswith('/api/recording/'):
+                    if recorder is None:
+                        self.send(b'Recorder unavailable','text/plain',503)
+                        return
+                    if self.path.endswith('/start'):
+                        state=monitor.snapshot()
+                        if state.get('state')!='running' or (state.get('result_age_ms') or 0)>2000:
+                            self.send(b'Fresh inference required','text/plain',409)
+                            return
+                        if not isinstance(body,dict) or set(body)!={'scenario'}:
+                            raise ValueError('Expected scenario')
+                        data=recorder.start(body['scenario'],dict(recording_metadata or {},
+                            calibration=calibration.snapshot() if calibration else None,
+                            source_size=[state.get('width'),state.get('height')],pose=state.get('pose')))
+                    else:
+                        if body!={}: raise ValueError('Stop body must be empty')
+                        data=recorder.stop()
+                    self.send(json.dumps(data).encode(),'application/json')
+                    return
                 if self.path == '/api/validation/phase':
                     if not isinstance(body,dict) or set(body) != {'phase'}:
                         raise ValueError('Expected phase only')
