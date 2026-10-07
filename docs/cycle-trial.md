@@ -102,3 +102,17 @@ python3 tests/count_integration.py
 ```
 
 [전체 게임 설계](game-communication-sequence.md), [관절 시험](pose-motion-trial.md).
+
+## 2026-10-07 실제 장비 왕복 검증
+
+Pi 기존 서버5000번을 유지하고 PI 자동 시험 제어기와 JETSON 단계 연결기를 실행했다.
+별도의 새 추론 프로세스 없이 현재 관절 웹에 적용했다.
+운영 입력으로 한 회차를 시작해 실제STM FRONT@OK/REAR@OK에 따른 상태 진행,
+Jetson MOVE→STOP→MOVE 추론 적용 확인, Pi의 `CYCLE DONE`을 확인했다.
+Jetson 로그 확인 번호는6ac5fc70/71/72였다. 고정 유지5초/완료 제한10초 조건이다.
+STM 서보 각도·방향의 육안 확인과 사람이 정지 구간에서 움직인 통합 정확도 검증은 미실행이다.
+명령→물리 완료/화면 표시 전체 지연 수치는 이번 시험에서 측정하지 않았다.
+
+Pi 제어기와 Jetson 연결기를 실행 상태로 남겼다. 회차 완료 후 움직임 허용 상태이며,
+자동 반복은 하지 않는다. STM START 또는 Pi FIFO start로 다음 회차를 시작할 수 있다.
+실제 로그는 각 장비 `.runtime/cycle-test/`에 있고 Git에서 제외한다.
