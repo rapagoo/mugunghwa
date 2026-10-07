@@ -67,7 +67,7 @@ class PoseMotionTrial:
                         reason = 'low_confidence'
                     else:
                         # One sustained wrist change OR two supporting body joints.
-                        wrists = [(common[j]/.05, j) for j in (9, 10) if j in common]
+                        wrists = [(common[j]/.03, j) for j in (9, 10) if j in common]
                         body = sorted([(v/.03, j) for j, v in common.items()
                                        if j not in (9, 10)], reverse=True)
                         choices = wrists + (body[1:2] if len(body) >= 2 else [])
@@ -97,7 +97,7 @@ class PoseMotionTrial:
         return dict(method='pose_fixed_baseline', phase=self.phase, version=command['version'],
             observations=output, events=list(self.events),
             missing_ids=[tid for tid, s in self.states.items() if now-s['seen'] > .5],
-            parameters=dict(confidence=.5, wrist_displacement=.05, body_displacement=.03,
+            parameters=dict(confidence=.5, wrist_displacement=.03, body_displacement=.03,
                 body_support=2, min_joints=4, min_torso=2, confirmation_s=.2,
                 confirmation_samples=3, max_gap_s=.5, grace_s=0),
             note='Local trial only; score >= 1 must persist. No identity reassociation.')
