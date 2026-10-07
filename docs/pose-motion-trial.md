@@ -61,6 +61,12 @@
 - Nano Python3.8에서 새 점수 계산 표본당 평균0.13~0.29ms(기존 기록 재생,
   추론/캡처/웹/JPEG/파일IO 제외). 실제 웹 전체FPS/지연은 배포 후 별도 확인한다.
 
+배포 검증: Jetson 전체43개 회귀 테스트 통과, JavaScript 구문 검사 통과.
+실제 서비스에서 관절 모델 활성·HTML 관절 표·API `pose_trial`·이동→정지→대기
+변경을 확인했다. 검증 시 카메라 검출0명이었으므로 라이브 사람 판정은 미검증이다.
+이때 단일 API 표본 간격66.8ms/처리49.6ms/프레임 게시→완료49.9ms였으며
+다인 조건의 성능 벤치마크가 아니다. 서비스를 관절 모델·시험 대기 상태로 남겼다.
+
 산출물은 Jetson 저장소의 `.runtime/pose-review/pose-score-replay.json`,
 `pose-score-still-offset2.json`, 스크립트 `.runtime/replay-pose.py`,
 `.runtime/replay-still-offset2.py`이며 사용자 영상/좌표와 함께 Git에서 제외한다.
