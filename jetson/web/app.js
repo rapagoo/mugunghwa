@@ -32,7 +32,8 @@ async function refreshVision(){
     put('tracks',`임시 추적 ID: ${(v.track_ids||[]).join(', ')||'—'}`);
     rows('candidates',(v.candidates||[]).map(c=>[`추적 ID ${c.track_id}`,`통과 후보 · ${c.crossed_at.toFixed(2)}초`]),'결승선 통과 후보 없음');
     put('calibration-info',v.calibrated?'구역 적용됨 · 구역 안 인원 '+v.roi_people+' · 설정 버전 '+v.calibration_revision:'구역 미설정 · 구역 설정 버튼으로 시작하세요.');
-    document.querySelector('.preview-note').textContent=`미리보기 최대 ${v.preview_hz||5} FPS · 추론 속도와 별개입니다.`;
+    document.querySelector('.preview-note').textContent=`미리보기 최대 ${v.preview_hz||5} FPS · 추론 속도와 별개입니다.`+
+      (v.pose?.enabled?` 관절 검출 비교 · 보이는 관절 수 ${v.pose.visible_keypoints.join(', ')||'—'}/17 · 현재 움직임 판정은 박스 중심 기준입니다.`:'');
     if(el('stream').dataset.retry==='1'){el('stream').src='/stream.mjpg?retry='+Date.now();el('stream').dataset.retry='0'}
   }catch(error){
     visionConnected=false;put('vision-state','서버 연결 끊김');el('overlay').hidden=false;el('overlay').textContent='서버 연결을 확인해 주세요';el('stream').dataset.retry='1';

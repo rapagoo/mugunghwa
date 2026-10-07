@@ -52,7 +52,12 @@ def main():
             metadata[prop.key] = ast.literal_eval(prop.value)
         except (ValueError, SyntaxError):
             metadata[prop.key] = prop.value
-    metadata.update(imgsz=args.shape, batch=1, task='detect', precision='fp16' if args.fp16 else 'fp32',
+    task = metadata.get('task', 'detect')
+    if task not in ('detect','pose'):
+        raise RuntimeError('Only detect and pose engine exports are supported')
+    if task == 'pose' and metadata.get('kpt_shape') != [17,3]:
+        raise RuntimeError('Expected COCO pose keypoint shape [17,3]')
+    metadata.update(imgsz=args.shape, batch=1, task=task, precision='fp16' if args.fp16 else 'fp32',
                     tensorrt_version=trt.__version__)
     print('BUILD_START', json.dumps(dict(shape=shape, fp16=args.fp16, workspace_mb=args.workspace_mb)), flush=True)
     engine = builder.build_engine(network, config)

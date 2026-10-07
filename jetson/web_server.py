@@ -16,7 +16,7 @@ def run_vision(args, monitor, stop, calibration):
     import cv2
     import torch
     from game.source import FrameSource
-    from game.detector import load_detector
+    from game.detector import load_detector, pose_keypoints
     from game import geometry
     from game.finish import FinishDetector
     from game.validation import VisionValidation
@@ -107,6 +107,7 @@ def run_vision(args, monitor, stop, calibration):
             boxes = result.boxes.xyxy.cpu().tolist()
             ids = [] if result.boxes.id is None else result.boxes.id.int().cpu().tolist()
             confidence = result.boxes.conf.cpu().tolist()
+            keypoints = pose_keypoints(result,boxes)
             height, width = frame.shape[:2]
             observed = time.monotonic()
             diagnostics = validation.update(boxes,ids,confidence,width,height,media,finish,
@@ -127,6 +128,9 @@ def run_vision(args, monitor, stop, calibration):
                                      for x1,y1,x2,y2 in boxes) if config else None
             data['validation'] = diagnostics
             data['motion_trial'] = motion_result
+            data['pose'] = dict(enabled=keypoints is not None,
+                visible_keypoints=[sum(k[2]>=.5 for k in person) for person in keypoints] if keypoints is not None else [],
+                motion_method='box_center')
             data['candidates'] = list(finish.completed.values()) if finish else []
             data['outside_people'] = len(boxes)-data['roi_people'] if config else None
             jpeg = None
@@ -135,6 +139,17 @@ def run_vision(args, monitor, stop, calibration):
                 preview = frame.copy()
                 if config:
                     geometry.overlay(preview, config)
+                if keypoints is not None:
+                    bones = [(5,6),(5,7),(7,9),(6,8),(8,10),(5,11),(6,12),
+                             (11,12),(11,13),(13,15),(12,14),(14,16)]
+                    for person in keypoints:
+                        for a,b in bones:
+                            if person[a][2]>=.5 and person[b][2]>=.5:
+                                cv2.line(preview,tuple(round(v) for v in person[a][:2]),
+                                         tuple(round(v) for v in person[b][:2]),(255,180,60),2)
+                        for x,y,c in person:
+                            if c>=.5:
+                                cv2.circle(preview,(round(x),round(y)),3,(255,180,60),-1)
                 for i, (x1,y1,x2,y2) in enumerate(boxes):
                     observation = data['validation']['observations'][i]
                     color = (50,210,90) if observation['in_roi'] else (150,150,150) if config else (0,220,255)

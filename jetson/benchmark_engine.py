@@ -10,7 +10,7 @@ import statistics
 os.environ['YOLO_AUTOINSTALL'] = 'false'
 import numpy as np
 import torch
-from game.detector import load_detector
+from game.detector import load_detector, pose_keypoints
 from game.source import FrameSource
 from game import geometry
 from game.finish import FinishDetector
@@ -40,6 +40,7 @@ def main():
     frames = detected = roi_frames = tracked = 0
     ids_count = Counter()
     timings, inference, events = [], [], []
+    people_counts, visible_keypoints = [], []
     try:
         first = cap.read()
         if first is None:
@@ -68,6 +69,10 @@ def main():
                 torch.cuda.synchronize()
                 t2 = time.perf_counter()
                 boxes = result.boxes.xyxy.cpu().tolist()
+                keypoints = pose_keypoints(result,boxes)
+                if keypoints is not None:
+                    visible_keypoints.extend(sum(k[2]>=.5 for k in person) for person in keypoints)
+                people_counts.append(len(boxes))
                 ids = [] if result.boxes.id is None else result.boxes.id.int().cpu().tolist()
                 feet = [[(x1+x2)/2/w,y2/h] for x1,y1,x2,y2 in boxes]
                 included = [geometry.inside(p,config['roi']) for p in feet] if config else [True]*len(feet)
@@ -84,7 +89,7 @@ def main():
                 tracked += int(bool(ids))
                 roi_frames += int(any(included))
                 # Evidence serialization is excluded from the measured processing times.
-                evidence.write(json.dumps(dict(frame=frames,media_s=media,boxes=boxes,ids=ids,feet=feet))+'\n')
+                evidence.write(json.dumps(dict(frame=frames,media_s=media,boxes=boxes,ids=ids,feet=feet,keypoints=keypoints))+'\n')
                 if frames % 120 == 0:
                     print('PROGRESS',frames,round(1000/statistics.mean(t[3] for t in timings),2),flush=True)
         report = dict(model=args.model,source=args.video or 'webcam',source_size=[w,h],tensor_shape=actual_shape,
@@ -93,6 +98,9 @@ def main():
                       total_p95_ms=float(np.percentile([t[3] for t in timings],95)),
                       inference_mean_ms=statistics.mean(inference),inference_p95_ms=float(np.percentile(inference,95)),
                       detected_frames=detected,tracked_frames=tracked,roi_frames=roi_frames,
+                      people_min=min(people_counts),people_max=max(people_counts),
+                      keypoint_confidence_threshold=.5,
+                      mean_visible_keypoints=statistics.mean(visible_keypoints) if visible_keypoints else None,
                       ids=dict(ids_count),finish_candidates=events,
                       note='Warmup excluded; no GUI/file-output timing or network. Detection presence is not ground-truth accuracy.')
         path.write_text(json.dumps(report,indent=2))
