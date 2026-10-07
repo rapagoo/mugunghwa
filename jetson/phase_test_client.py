@@ -61,6 +61,7 @@ def session(host, port, web):
         last_ping = time.monotonic()
         next_health = 0
         cached = {}
+        last_health = None
         def send(payload):
             conn.sendall(('[PI]'+payload+'\n').encode())
         while True:
@@ -69,13 +70,22 @@ def session(host, port, web):
                 try:
                     state = web_json(web,'/api/vision')
                     trial = state.get('pose_trial', {})
-                    healthy = fresh(state) and now-last_ping <= 3
+                    reason = ('pose inference unavailable or stale' if not fresh(state)
+                              else 'Pi heartbeat missing' if now-last_ping > 3 else None)
                     if expected and expected['phase'] != 'idle':
-                        healthy = healthy and trial.get('phase') == expected['phase'] and trial.get('version') == expected['version']
+                        if trial.get('phase') != expected['phase'] or trial.get('version') != expected['version']:
+                            reason = reason or 'web phase changed outside Pi controller'
+                    healthy = reason is None
+                    health = reason or 'ready'
+                    if health != last_health:
+                        print('HEALTH '+health, flush=True); last_health = health
                     send('TRIAL@READY' if healthy else 'TRIAL@ERROR')
                     if not healthy and expected:
                         apply_phase(web,'IDLE'); expected = None
-                except Exception:
+                except Exception as error:
+                    health = 'web/communication error: '+str(error)
+                    if health != last_health:
+                        print('HEALTH '+health, flush=True); last_health = health
                     send('TRIAL@ERROR')
                     try: apply_phase(web,'IDLE')
                     except Exception: pass

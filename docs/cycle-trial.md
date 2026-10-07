@@ -120,3 +120,12 @@ Pi 제어기와 Jetson 연결기를 실행 상태로 남겼다. 회차 완료 �
 배포 뒤 최종 빈 장면의 웹 최근 평균 갱신은115.8ms(약8.6Hz), 처리약50ms로 관측됐다.
 카메라 설정상30FPS와 실제 전달/판정 주기는 구분한다. 원인은 미확인으로
 TS-VISION-011에 기록했다. 연결기 추가에 따른 성능 영향이라고 확정한 것은 아니다.
+
+2026-10-07 재접속 복구: Pi 서버는 인증된 같은 ID의 새 연결로 기존 세션을 교체한다.
+동일 PI/JETSON ID로 수동 클라이언트를 동시에 실행하면 자동 제어기 세션이 교체되므로
+각 ID는 하나씩 실행한다. 잘못된 비밀번호는 기존 연결을 바꾸지 않는다.
+서버 로그는 Pi `.runtime/server/server.log`에 남기며 현재 서버는 백그라운드 실행 중이다.
+Jetson 연결기의 `HEALTH Pi heartbeat missing`은 Pi PING 미도착,
+`HEALTH pose inference unavailable or stale`은 관절 추론 상태 문제를 뜻한다.
+실제 복구 뒤 `HEALTH ready` 및 PING↔READY 왕복을 확인했다. 모터 육안 재시험은 대기 중이다.
+자세한 증상·조치·회귀 검증은 [TS-NET-001](troubleshooting.md#ts-net-001)에 기록했다.

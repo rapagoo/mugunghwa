@@ -15,6 +15,7 @@
 #include <sys/time.h>
 #include <time.h>
 #include <errno.h>
+#include <signal.h>
 
 #define BUF_SIZE 100
 #define MAX_CLNT 35
@@ -23,7 +24,7 @@
 
 #define DEBUG
 typedef struct {
-		char fd;
+		int fd;
 		char *from;
 		char *to;
 		char *msg;
@@ -37,6 +38,12 @@ typedef struct {
 		char id[ID_SIZE];
 		char pw[ID_SIZE];
 }CLIENT_INFO;
+
+typedef struct {
+	CLIENT_INFO *client;
+	CLIENT_INFO *first;
+	int fd;
+} CONNECTION;
 
 void * clnt_connection(void * arg);
 void send_msg(MSG_INFO * msg_info, CLIENT_INFO * first_client_info);
@@ -54,12 +61,10 @@ int main(int argc, char *argv[])
 		struct sockaddr_in serv_adr, clnt_adr;
 		int clnt_adr_sz;
 		int sock_option  = 1;
-		pthread_t t_id[MAX_CLNT] = {0};
+		pthread_t t_id;
 		int str_len = 0;
 		int i=0;
 		char idpasswd[(ID_SIZE*2)+3];
-		char *pToken;
-		char *pArray[ARR_CNT]={0};
 		char msg[BUF_SIZE];
 /*
 		CLIENT_INFO client_info[MAX_CLNT] = {{0,-1,"","1","PASSWD"}, \
@@ -88,24 +93,25 @@ int main(int argc, char *argv[])
 		}
 		char id[ID_SIZE];
 		char pw[ID_SIZE];
-		CLIENT_INFO * client_info = (CLIENT_INFO *)calloc(sizeof(CLIENT_INFO),MAX_CLNT);
+		CLIENT_INFO * client_info = calloc(MAX_CLNT, sizeof(CLIENT_INFO));
 		if(client_info == NULL)
 		{
 			perror("calloc()");
 			exit(1);
 		}
+		for(int n=0; n<MAX_CLNT; n++) client_info[n].fd = -1;
 		do {
-			str_len = fscanf(idFd,"%s %s",id,pw);	
-			if(str_len <= 0)
+			str_len = fscanf(idFd,"%9s %9s",id,pw);
+			if(str_len != 2)
 				break;
 			client_info[i].fd=-1;
 			strcpy(client_info[i].id,id);
 			strcpy(client_info[i].pw,pw);
 			i++;
 //			printf("i:%d, %s %s\n",i,client_info[i].id,client_info[i].pw);
-			if(i > MAX_CLNT)
+			if(i >= MAX_CLNT)
 			{
-				printf("error client_info pull(Max:%d)\n",MAX_CLNT);			
+				printf("error client_info pull(Max:%d)\n",MAX_CLNT);
 				break;
 			}
 		} while(1);
@@ -134,105 +140,77 @@ int main(int argc, char *argv[])
 		if(listen(serv_sock, 5) == -1)
 				error_handling("listen() error");
 
-		while(1) {
-				clnt_adr_sz = sizeof(clnt_adr);
-				clnt_sock = accept(serv_sock, (struct sockaddr *)&clnt_adr, &clnt_adr_sz);
-				if(clnt_cnt >= MAX_CLNT)
-				{
-						printf("socket full\n");
-						shutdown(clnt_sock,SHUT_WR);
-						continue;
-				}
-				else if(clnt_sock < 0)
-				{
-						perror("accept()");
-						continue;
-				}
 
-				str_len = read(clnt_sock, idpasswd, sizeof(idpasswd));
-				idpasswd[str_len] = '\0';
+        signal(SIGPIPE, SIG_IGN);
+        while(1) {
+            clnt_adr_sz = sizeof(clnt_adr);
+            clnt_sock = accept(serv_sock, (struct sockaddr *)&clnt_adr, (socklen_t *)&clnt_adr_sz);
+            if(clnt_sock < 0) { if(errno != EINTR) perror("accept()"); continue; }
+            struct timeval timeout = {3, 0};
+            setsockopt(clnt_sock, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
+            setsockopt(clnt_sock, SOL_SOCKET, SO_SNDTIMEO, &timeout, sizeof(timeout));
+            size_t used = 0;
+            while(used < sizeof(idpasswd)-1) {
+                ssize_t n = read(clnt_sock, idpasswd+used, 1);
+                if(n < 0 && errno == EINTR) continue;
+                if(n != 1) break;
+                if(idpasswd[used++] == ']') break;
+            }
+            idpasswd[used] = '\0';
+            char *colon = strchr(idpasswd, ':');
+            if(used < 4 || idpasswd[0] != '[' || idpasswd[used-1] != ']' || !colon) {
+                close(clnt_sock); continue;
+            }
+            *colon = '\0'; idpasswd[used-1] = '\0';
+            for(i=0; i<MAX_CLNT; i++) {
+                if(*client_info[i].id && !strcmp(client_info[i].id, idpasswd+1)
+                   && !strcmp(client_info[i].pw, colon+1)) break;
+            }
+            if(i == MAX_CLNT) {
+                const char *error = "Authentication Error!\n";
+                write(clnt_sock, error, strlen(error)); close(clnt_sock); continue;
+            }
+            timeout.tv_sec = 0;
+            setsockopt(clnt_sock, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
+            CONNECTION *connection = malloc(sizeof(*connection));
+            if(!connection) { close(clnt_sock); continue; }
+            connection->client = client_info+i; connection->first = client_info; connection->fd = clnt_sock;
+            pthread_mutex_lock(&mutx);
+            int previous = client_info[i].fd;
+            /* Authenticate first; each reader owns one immutable descriptor. */
+            if(previous != -1) shutdown(previous, SHUT_RDWR); else clnt_cnt++;
+            client_info[i].index = i; client_info[i].fd = clnt_sock;
+            strcpy(client_info[i].ip, inet_ntoa(clnt_adr.sin_addr));
+            snprintf(msg, sizeof(msg), "[%s] New connected! (ip:%s,fd:%d,sockcnt:%d)\n",
+                     client_info[i].id, client_info[i].ip, clnt_sock, clnt_cnt);
+            log_file(msg); write(clnt_sock, msg, strlen(msg));
+            int result = pthread_create(&t_id, NULL, clnt_connection, connection);
+            if(result) { client_info[i].fd = -1; clnt_cnt--; close(clnt_sock); free(connection); }
+            else pthread_detach(t_id);
+            pthread_mutex_unlock(&mutx);
+        }
 
-				if(str_len > 0)
-				{
-						i=0;
-						pToken = strtok(idpasswd,"[:]");
-
-						while(pToken != NULL)
-						{
-								pArray[i] =  pToken;
-								if(i++ >= ARR_CNT)
-										break;	
-								pToken = strtok(NULL,"[:]");
-						}
-						for(i=0;i<MAX_CLNT;i++)
-						{
-								if(!strcmp(client_info[i].id,pArray[0]))
-								{
-										if(client_info[i].fd != -1)
-										{
-												sprintf(msg,"[%s] Already logged!\n",pArray[0]);
-												write(clnt_sock, msg,strlen(msg));
-												log_file(msg);
-												shutdown(clnt_sock,SHUT_WR);
-#if 1   //for MCU
-												client_info[i].fd = -1;
-#endif  
-												break;
-										}
-										if(!strcmp(client_info[i].pw,pArray[1])) 
-										{
-
-												strcpy(client_info[i].ip,inet_ntoa(clnt_adr.sin_addr));
-												pthread_mutex_lock(&mutx);
-												client_info[i].index = i; 
-												client_info[i].fd = clnt_sock; 
-												clnt_cnt++;
-												pthread_mutex_unlock(&mutx);
-												sprintf(msg,"[%s] New connected! (ip:%s,fd:%d,sockcnt:%d)\n",pArray[0],inet_ntoa(clnt_adr.sin_addr),clnt_sock,clnt_cnt);
-												log_file(msg);
-												write(clnt_sock, msg,strlen(msg));
-
-												pthread_create(t_id+i, NULL, clnt_connection, (void *)(client_info + i));
-												pthread_detach(t_id[i]);
-												break;
-										}
-								}
-						}
-						if(i == MAX_CLNT)
-						{
-								sprintf(msg,"[%s] Authentication Error!\n",pArray[0]);
-								write(clnt_sock, msg,strlen(msg));
-								log_file(msg);
-								shutdown(clnt_sock,SHUT_WR);
-						}
-				}
-				else 
-						shutdown(clnt_sock,SHUT_WR);
-
-		}
 		return 0;
 }
 
 void * clnt_connection(void *arg)
 {
-		CLIENT_INFO * client_info = (CLIENT_INFO *)arg;
-		int str_len = 0;
-		int index = client_info->index;
-		char msg[BUF_SIZE];
-		char line[BUF_SIZE];
-		size_t used = 0;
-		int dropping = 0;
-		char strBuff[BUF_SIZE*2]={0};
 
-		CLIENT_INFO  * first_client_info;
-
-		first_client_info = (CLIENT_INFO *)((void *)client_info - (void *)( sizeof(CLIENT_INFO) * index ));
+        CONNECTION *connection = arg;
+        CLIENT_INFO *client_info = connection->client, *first_client_info = connection->first;
+        int fd = connection->fd;
+        free(connection);
+        int str_len = 0;
+        char msg[BUF_SIZE], line[BUF_SIZE];
+        size_t used = 0;
+        int dropping = 0;
+        char strBuff[BUF_SIZE*2]={0};
 		while(1)
 		{
 				memset(msg,0x0,sizeof(msg));
-				str_len = read(client_info->fd, msg, sizeof(msg)-1); 
-				if(str_len <= 0)
-						break;
+				str_len = read(fd, msg, sizeof(msg)-1);
+				if(str_len < 0 && errno == EINTR) continue;
+                if(str_len <= 0) break;
 
 				for(int n = 0; n < str_len; n++) {
 					if(msg[n] == '\r') continue;
@@ -248,21 +226,20 @@ void * clnt_connection(void *arg)
 					line[used++] = msg[n];
 					if(msg[n] == '\n') {
 						line[used] = '\0';
-						route_line(line, client_info, first_client_info);
+						pthread_mutex_lock(&mutx);
+                        if(client_info->fd == fd) route_line(line, client_info, first_client_info);
+                        pthread_mutex_unlock(&mutx);
 						used = 0;
 					}
 				}
 		}
 
-		close(client_info->fd);
 
-		sprintf(strBuff,"Disconnect ID:%s (ip:%s,fd:%d,sockcnt:%d)\n",client_info->id,client_info->ip,client_info->fd,clnt_cnt-1);
-		log_file(strBuff);
-
-		pthread_mutex_lock(&mutx);
-		clnt_cnt--;
-		client_info->fd = -1;
-		pthread_mutex_unlock(&mutx);
+        pthread_mutex_lock(&mutx);
+        if(client_info->fd == fd) { client_info->fd = -1; clnt_cnt--; }
+        snprintf(strBuff, sizeof(strBuff), "Disconnect ID:%s (fd:%d,sockcnt:%d)\n",client_info->id,fd,clnt_cnt);
+        log_file(strBuff); close(fd);
+        pthread_mutex_unlock(&mutx);
 
 		return 0;
 }
@@ -293,7 +270,7 @@ void send_msg(MSG_INFO * msg_info, CLIENT_INFO * first_client_info)
 		if(!strcmp(msg_info->to,"ALLMSG"))
 		{
 				for(i=0;i<MAX_CLNT;i++)
-						if((first_client_info+i)->fd != -1)	
+						if((first_client_info+i)->fd != -1)
 								write((first_client_info+i)->fd, msg_info->msg, msg_info->len);
 		}
 		else if(!strcmp(msg_info->to,"IDLIST"))
@@ -304,7 +281,7 @@ void send_msg(MSG_INFO * msg_info, CLIENT_INFO * first_client_info)
 
 				for(i=0;i<MAX_CLNT;i++)
 				{
-						if((first_client_info+i)->fd != -1)	
+						if((first_client_info+i)->fd != -1)
 						{
 								strcat(idlist,(first_client_info+i)->id);
 								strcat(idlist," ");
@@ -322,7 +299,7 @@ void send_msg(MSG_INFO * msg_info, CLIENT_INFO * first_client_info)
 		}
 		else
 				for(i=0;i<MAX_CLNT;i++)
-						if((first_client_info+i)->fd != -1)	
+						if((first_client_info+i)->fd != -1)
 								if(!strcmp(msg_info->to,(first_client_info+i)->id))
 										write((first_client_info+i)->fd, msg_info->msg, msg_info->len);
 }
