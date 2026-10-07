@@ -66,5 +66,9 @@ class CalibrationTests(unittest.TestCase):
                 self.assertEqual(response.read(),b'raw')
             with urlopen(url+'/api/calibration') as response:
                 self.assertEqual(json.load(response)['config'],CONFIG)
+            with urlopen(Request(url+'/api/validation/reset',data=b'{}',headers=headers)) as response:
+                self.assertEqual(json.load(response)['requested_reset'],1)
+            self.assertEqual(monitor.reset_version(),1)
+            self.assertEqual(self.store.snapshot()['config'],CONFIG)
         finally:
             monitor.close(); server.shutdown(); server.server_close(); thread.join()

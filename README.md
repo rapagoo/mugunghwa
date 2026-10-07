@@ -12,6 +12,7 @@ Pi의 기존 `game` 코드와 Jetson의 TCP·영상 예제를 기준으로 시�
 [프로젝트 트러블슈팅 기록·추론 최적화 계획](docs/troubleshooting.md).
 [Jetson TensorRT 엔진 생성·비교](docs/jetson-engine-optimization.md).
 [Jetson 웹 영상 모니터·게임 DB 조회](docs/web-monitor.md).
+[웹캠 구역·결승선·두 사람 추적 검증](docs/vision-validation.md).
 [Pi MariaDB 기본 구성·웹 조회 검증](docs/database.md).
 
 ## 구성

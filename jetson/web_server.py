@@ -19,6 +19,7 @@ def run_vision(args, monitor, stop, calibration):
     from game.detector import load_detector
     from game import geometry
     from game.finish import FinishDetector
+    from game.validation import VisionValidation
     slot = LatestFrame()
     capture = None
     reader = None
@@ -45,7 +46,8 @@ def run_vision(args, monitor, stop, calibration):
 
         def read_frames():
             try:
-                packet = first
+                # Webcam warmup can take seconds; do not submit its old first frame.
+                packet = first if args.video else capture.read()
                 anchor = time.monotonic()
                 while not stop.is_set() and not reader_stop.is_set():
                     if packet is None:
@@ -71,6 +73,9 @@ def run_vision(args, monitor, stop, calibration):
         serial, epoch, previous, last_jpeg = 0, None, None, 0
         revision = None
         finish = None
+        validation = None
+        reset_version = None
+        session_number = 0
         while not stop.is_set():
             packet = slot.next(serial)
             if packet is None:
@@ -80,6 +85,7 @@ def run_vision(args, monitor, stop, calibration):
             serial, (frame, media, current_epoch, source_wall) = packet
             settings = calibration.snapshot()
             changed = settings['revision'] != revision
+            requested_reset = monitor.reset_version()
             if current_epoch != epoch or changed:
                 for tracker in model.predictor.trackers:
                     tracker.reset()
@@ -87,14 +93,21 @@ def run_vision(args, monitor, stop, calibration):
                 config = settings['config']
                 revision = settings['revision']
                 finish = FinishDetector(config) if config else None
+            if validation is None or changed or validation.session['epoch'] != current_epoch or requested_reset != reset_version:
+                session_number += 1
+                reset_version = requested_reset
+                finish = FinishDetector(config) if config else None
+                validation = VisionValidation(config,dict(number=session_number,epoch=current_epoch,
+                    calibration_revision=revision,reset_generation=reset_version))
             start = time.monotonic()
             result = model.track(frame, **options)[0]
             boxes = result.boxes.xyxy.cpu().tolist()
             ids = [] if result.boxes.id is None else result.boxes.id.int().cpu().tolist()
+            confidence = result.boxes.conf.cpu().tolist()
             height, width = frame.shape[:2]
-            if finish:
-                for tid, (x1,y1,x2,y2) in zip(ids, boxes):
-                    finish.update(tid, [(x1+x2)/2/width,y2/height], media)
+            observed = time.monotonic()
+            diagnostics = validation.update(boxes,ids,confidence,width,height,media,finish,
+                None if previous is None else (observed-previous)*1000)
             completed = time.monotonic()
             data = dict(state='running', epoch=epoch, media_s=media, people=len(boxes),
                         track_ids=ids, candidates=list(finish.completed.values()) if finish else [],
@@ -107,6 +120,9 @@ def run_vision(args, monitor, stop, calibration):
             data['calibrated'] = config is not None
             data['roi_people'] = sum(geometry.inside([(x1+x2)/2/width,y2/height],config['roi'])
                                      for x1,y1,x2,y2 in boxes) if config else None
+            data['validation'] = diagnostics
+            data['candidates'] = list(finish.completed.values()) if finish else []
+            data['outside_people'] = len(boxes)-data['roi_people'] if config else None
             jpeg = None
             camera_jpeg = None
             if completed-last_jpeg >= 1/args.preview_hz:
@@ -114,9 +130,15 @@ def run_vision(args, monitor, stop, calibration):
                 if config:
                     geometry.overlay(preview, config)
                 for i, (x1,y1,x2,y2) in enumerate(boxes):
-                    cv2.rectangle(preview,(round(x1),round(y1)),(round(x2),round(y2)),(0,220,255),2)
-                    cv2.putText(preview,'Track {}'.format(ids[i] if i < len(ids) else '?'),
-                                (round(x1),max(20,round(y1)-5)),cv2.FONT_HERSHEY_SIMPLEX,.6,(0,220,255),2)
+                    observation = data['validation']['observations'][i]
+                    color = (50,210,90) if observation['in_roi'] else (150,150,150) if config else (0,220,255)
+                    if observation['candidate']:
+                        color = (0,190,255)
+                    cv2.rectangle(preview,(round(x1),round(y1)),(round(x2),round(y2)),color,2)
+                    cv2.circle(preview,(round((x1+x2)/2),min(height-1,round(y2))),5,color,-1)
+                    label = 'ID {} {}'.format(observation['track_id'] if observation['track_id'] is not None else '?',
+                        'CANDIDATE' if observation['candidate'] else 'IN' if observation['in_roi'] else 'OUT' if config else '')
+                    cv2.putText(preview,label,(round(x1),max(20,round(y1)-5)),cv2.FONT_HERSHEY_SIMPLEX,.6,color,2)
                 if width > 960:
                     preview = cv2.resize(preview,(960,round(height*960/width)))
                 ok, encoded = cv2.imencode('.jpg',preview,[cv2.IMWRITE_JPEG_QUALITY,75])

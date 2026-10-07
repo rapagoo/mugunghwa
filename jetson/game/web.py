@@ -17,6 +17,7 @@ class Monitor:
         self.camera_jpeg = None
         self.serial = 0
         self.closed = False
+        self.reset_generation = 0
         self.state = dict(source=source, state='preparing', error=None)
 
     def update(self, data, jpeg=None, camera_jpeg=None):
@@ -40,6 +41,15 @@ class Monitor:
         with self.condition:
             self.closed = True
             self.condition.notify_all()
+
+    def request_reset(self):
+        with self.condition:
+            self.reset_generation += 1
+            return self.reset_generation
+
+    def reset_version(self):
+        with self.condition:
+            return self.reset_generation
 
 
 class GameDatabase:
@@ -94,12 +104,13 @@ def create_server(host, port, monitor, database, calibration=None):
         def do_GET(self):
             route = self.path.split('?', 1)[0]
             try:
-                if route in ('/', '/app.js', '/style.css', '/calibrate', '/calibrate.js'):
+                if route in ('/', '/app.js', '/style.css', '/calibrate', '/calibrate.js', '/validation.js'):
                     name, mime = {'/': ('index.html','text/html; charset=utf-8'),
                                   '/app.js': ('app.js','text/javascript; charset=utf-8'),
                                   '/style.css': ('style.css','text/css; charset=utf-8'),
                                   '/calibrate': ('calibrate.html','text/html; charset=utf-8'),
-                                  '/calibrate.js': ('calibrate.js','text/javascript; charset=utf-8')}[route]
+                                  '/calibrate.js': ('calibrate.js','text/javascript; charset=utf-8'),
+                                  '/validation.js': ('validation.js','text/javascript; charset=utf-8')}[route]
                     self.send((static/name).read_bytes(), mime)
                 elif route in ('/api/vision', '/api/game'):
                     data = monitor.snapshot() if route == '/api/vision' else database.snapshot()
@@ -141,7 +152,7 @@ def create_server(host, port, monitor, database, calibration=None):
                 self.send(b'Database unavailable', 'text/plain', 503)
 
         def do_POST(self):
-            if self.path != '/api/calibration' or calibration is None:
+            if self.path not in ('/api/calibration','/api/validation/reset') or (self.path == '/api/calibration' and calibration is None):
                 self.send(b'Not found', 'text/plain', 404)
                 return
             # JSON + same-origin browser request, not form submissions from other sites.
@@ -161,6 +172,12 @@ def create_server(host, port, monitor, database, calibration=None):
                     raise ValueError('Invalid request length')
                 self.connection.settimeout(5)
                 body = json.loads(self.rfile.read(length))
+                if self.path == '/api/validation/reset':
+                    if body != {}:
+                        raise ValueError('Reset body must be empty object')
+                    generation = monitor.request_reset()
+                    self.send(json.dumps(dict(requested_reset=generation)).encode(), 'application/json')
+                    return
                 state = monitor.snapshot()
                 if not state.get('width') or not state.get('height'):
                     self.send(b'Camera preparing', 'text/plain', 409)
