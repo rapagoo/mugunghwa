@@ -341,6 +341,11 @@ GPU 추론 시간이 크게 줄어든다고 가정하지 않는다.
   브라우저 표시 처리 시간 표본을 다인 성능 벤치마크로 해석하지 않음.
 - 관련: [웹캠 웹 테스트·서비스 관리](web-monitor.md), `deploy/mugunghwa-web.service`,
   `jetson/game/calibration_store.py`, `jetson/web/calibrate.js`.
+- 2026-10-07 관절 비교 재부팅 확인: 사용자가 재부팅 후 관절 표시가 사라졌다고 보고.
+  웹 서비스는 active였고 pose.enabled=false, /run의 비교 drop-in은 없었다.
+  임시 선택 설정이 재부팅으로 지워진 예상 동작이며 엔진 파일은 보존돼 있었다.
+  같은 /run drop-in을 다시 적용하고 재시작해 running/pose.enabled=true,
+  640×480·구역 버전1·검출 간격68ms API 표본 확인. 영구 설정은 변경하지 않았다.
 
 ### TS-WEB-004
 
