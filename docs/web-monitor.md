@@ -1,7 +1,49 @@
-# Jetson 웹 모니터 (2026-10-06)
+# Jetson 웹 모니터 (2026-10-07 갱신)
 
 같은 네트워크의 브라우저에서 `http://10.10.16.120:8080/`에 접속합니다.
-현재 촬영한 960×540 영상을 FP16 엔진으로 반복 재생합니다. VNC 화면 없이 작동합니다.
+현재 640×480 웹캠을 FP16 엔진으로 실시간 검출합니다. VNC 화면 없이 작동합니다.
+
+## 웹에서 계속 테스트
+
+1. 메인 화면의 **구역 설정**을 누릅니다.
+2. 현재 웹캠 사진에서 게임 구역 가장자리를 순서대로 3~32점 클릭합니다.
+3. **2. 결승선**을 누르고 양 끝 두 점을 클릭합니다.
+4. **3. 통과 방향**을 누르고 선을 넘은 뒤 도착할 쪽을 클릭합니다.
+5. **저장하고 테스트 화면으로**를 누릅니다. 재시작 없이 다음 검출부터 적용됩니다.
+
+구역 안 인원은 박스 하단 중앙(발 위치 추정)이 구역에 있는지로 계산합니다.
+결승선 통과 후보는 기존 방향·유한 선분·여유 폭·추적 시간 간격 검사로 계산합니다.
+ROI 밖 사람도 전체 검출 인원에는 포함되며 화면에서 별도 구역 안 인원을 표시합니다.
+이 화면은 검출/통과 후보 시험이며 정지 중 움직임·최종 통과/탈락·Pi 관측 전송은 아직 연결 전입니다.
+
+설정 페이지는 `/camera.jpg`의 박스/기존 선이 없는 웹캠 사진을 사용합니다.
+**현재 화면 다시 가져오기**로 배경만 갱신합니다. **점 모두 지우기**는 편집 중 점만 비우고,
+**저장된 설정 해제**는 서버 설정과 파일을 해제합니다. 편집 중 검출은 계속됩니다.
+저장 시 검출 추적/기존 통과 후보를 초기화하므로 진행 중 게임에 설정을 바꾸는 기능은 추후 제한해야 합니다.
+다른 브라우저가 먼저 저장하면 409로 덮어쓰기를 거부합니다. 페이지를 새로 열어 최신 설정을 불러옵니다.
+잘못된 다각형·선·방향·화면 비율은 서버에서 검사하고 마지막 유효 설정을 유지합니다.
+
+카메라 설정은 Jetson `.runtime/web/calibration-camera.json`에 원자적으로 저장하며 Git 제외입니다.
+재시작 후 불러옵니다. 영상 재생 시에는 `--calibration-store .runtime/web/calibration-video.json`을 지정해
+웹캠 설정과 분리합니다. 카메라 위치/렌즈/화면 비율을 바꾼 경우 다시 설정합니다.
+
+## 재부팅 자동 실행
+
+Jetson의 시스템 서비스 `mugunghwa-web.service`를 설치하고 enabled/active를 확인했습니다.
+Jetson 사용자로 웹캠·카메라용 480×640 FP16 엔진·Pi MariaDB 조회 설정을 사용합니다.
+
+```bash
+systemctl status mugunghwa-web.service
+sudo systemctl restart mugunghwa-web.service
+journalctl -u mugunghwa-web.service -n 50 --no-pager
+```
+
+서비스 파일은 `deploy/mugunghwa-web.service`입니다. 재등록은 `sudo install -m 644
+deploy/mugunghwa-web.service /etc/systemd/system/` 후 daemon-reload와 enable --now를 사용합니다.
+프로세스 오류는 systemd가 재시작하고, 카메라 입력/추론 오류는 웹 페이지를 유지한 채 3초 간격 재시도합니다.
+카메라가 늦게 연결돼도 복구하도록 구현했으며 실제 USB 분리/재연결 반복 검증은 남아 있습니다.
+모델 준비 중에는 준비 메시지와 첫 웹캠 사진이 보이고 준비 후 스트림이 계속 갱신됩니다.
+이번 검증은 서비스 재시작/저장 유지까지이며 실제 장비 재부팅 시험은 별도로 남겼습니다.
 
 ## 실행
 
@@ -11,6 +53,7 @@ Jetson 저장소 `/home/jetson/projects/mugunghwa/repo`에서:
 /home/jetson/yolo_v8/bin/python jetson/web_server.py \
   --video data/video-tests/20261006-141148/20261006_141148-960x540.mp4 \
   --config data/video-tests/20261006-141148/calibration.json \
+  --calibration-store .runtime/web/calibration-video.json \
   --model .runtime/trt-models/yolov8n-384x640-fp16.engine --loop
 ```
 
@@ -26,13 +69,17 @@ Jetson 저장소 `/home/jetson/projects/mugunghwa/repo`에서:
 동일 카메라/GPU에 다른 검출 프로그램을 중복 실행하지 않습니다.
 터미널 실행은 Ctrl+C로 종료합니다. 백그라운드 실행 로그는 `.runtime/web/server.log`입니다.
 프로세스는 `pgrep -af jetson/web_server.py`로 확인 후 해당 PID에 `kill -TERM PID`로 종료합니다.
-자동 시작 서비스 등록은 아직 하지 않았습니다.
+현재 웹캠은 위 시스템 서비스로 관리하므로 수동 시험 전에 `sudo systemctl stop mugunghwa-web.service`로
+중복 실행을 막고, 끝나면 `sudo systemctl start mugunghwa-web.service`로 복구합니다.
 
 ## 화면과 API
 
 - `/`: 반응형 한국어 모니터. 검출 인원, 임시 추적 ID, 결승선 통과 후보, 처리 시간.
 - `/stream.mjpg`: 검출한 프레임과 같은 프레임에 박스를 그린 MJPEG. JPEG를 기본 최대 5 Hz로 한 번만 생성하고 모든 접속자에게 공유.
 - `/frame.jpg`: 마지막 JPEG. 준비 중이면 503.
+- `/camera.jpg`: 박스/선이 없는 마지막 카메라 JPEG. 설정 배경용.
+- `/calibrate`: 현재 카메라 구역/결승선 클릭 설정 화면.
+- `/api/calibration`: GET으로 현재 설정·버전 조회, POST로 설정 저장/해제. LAN 개발용이며 공개 인증 기능은 아직 없음.
 - `/api/vision`: 현재 입력·추론 상태. 브라우저에서 1초 간격 조회.
 - `/api/game`: SQLite의 최신 게임, 참가자 결과, 최근 이벤트 30개 조회.
 
@@ -77,4 +124,6 @@ Python 표준 라이브러리 HTTP/SQLite를 사용하여 Jetson의 torch·NumPy
 현재 내부 네트워크 개발용 서버로 인증/TLS가 없으며 인터넷 공개용 배포는 구성하지 않았습니다.
 자동 테스트는 빈 DB, Pi 상태 저장 후 재조회, 관측 후보의 판정 비기록, HTTP JSON/JPEG/MJPEG 응답을 확인합니다.
 Jetson에서 전체 테스트 13개 통과, 실제 영상 검출과 브라우저 상태 갱신을 확인했습니다.
-웹캠 모드의 실장 테스트와 전체 카메라→브라우저 지연 측정은 후속 검증입니다.
+2026-10-07 웹캠 640×480, 카메라용 FP16 엔진에서 실제 브라우저 표시와 클릭 설정 저장,
+검출 적용 버전·ROI 인원 출력·서비스 재시작 후 설정 유지·설정 해제를 확인했습니다.
+자동 테스트 16개 통과. 전체 카메라→브라우저 지연·게임 환경 다인 판정 검증은 후속입니다.

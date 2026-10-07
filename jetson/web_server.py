@@ -8,9 +8,10 @@ import time
 os.environ['YOLO_AUTOINSTALL'] = 'false'
 from game.web import Monitor, GameDatabase, create_server
 from game.realtime import LatestFrame
+from game.calibration_store import CalibrationStore
 
 
-def run_vision(args, monitor, stop):
+def run_vision(args, monitor, stop, calibration):
     # Heavy dependencies stay outside HTTP threads and database tests.
     import cv2
     import torch
@@ -21,14 +22,20 @@ def run_vision(args, monitor, stop):
     slot = LatestFrame()
     capture = None
     reader = None
+    reader_stop = threading.Event()
     try:
-        config = geometry.load(args.config) if args.config else None
+        settings = calibration.snapshot()
+        config = settings['config']
         capture = FrameSource(camera=args.camera, video=args.video)
         first = capture.read()
         if first is None:
             raise ValueError('Empty source')
+        height, width = first[0].shape[:2]
+        ok, initial = cv2.imencode('.jpg',first[0],[cv2.IMWRITE_JPEG_QUALITY,75])
+        monitor.update(dict(width=width,height=height), initial.tobytes() if ok else None,
+                       initial.tobytes() if ok else None)
         if config:
-            geometry.check_size(config, first[0].shape[1], first[0].shape[0])
+            geometry.check_size(config, width, height)
         model, size = load_detector(args.model, args.imgsz)
         options = dict(imgsz=size, conf=.35, classes=[0], persist=True,
                        tracker='bytetrack.yaml', verbose=False,
@@ -40,7 +47,7 @@ def run_vision(args, monitor, stop):
             try:
                 packet = first
                 anchor = time.monotonic()
-                while not stop.is_set():
+                while not stop.is_set() and not reader_stop.is_set():
                     if packet is None:
                         if not args.loop or not args.video:
                             slot.close()
@@ -62,6 +69,7 @@ def run_vision(args, monitor, stop):
         reader = threading.Thread(target=read_frames, daemon=True, name='capture')
         reader.start()
         serial, epoch, previous, last_jpeg = 0, None, None, 0
+        revision = None
         finish = None
         while not stop.is_set():
             packet = slot.next(serial)
@@ -70,10 +78,14 @@ def run_vision(args, monitor, stop):
                     monitor.update(dict(state='ended'))
                 break
             serial, (frame, media, current_epoch, source_wall) = packet
-            if current_epoch != epoch:
+            settings = calibration.snapshot()
+            changed = settings['revision'] != revision
+            if current_epoch != epoch or changed:
                 for tracker in model.predictor.trackers:
                     tracker.reset()
                 epoch, previous = current_epoch, None
+                config = settings['config']
+                revision = settings['revision']
                 finish = FinishDetector(config) if config else None
             start = time.monotonic()
             result = model.track(frame, **options)[0]
@@ -91,7 +103,12 @@ def run_vision(args, monitor, stop):
                         result_latency_ms=round((completed-source_wall)*1000,1),
                         completed_wall=completed, preview_hz=args.preview_hz,
                         width=width, height=height, source_fps=capture.fps)
+            data['calibration_revision'] = revision
+            data['calibrated'] = config is not None
+            data['roi_people'] = sum(geometry.inside([(x1+x2)/2/width,y2/height],config['roi'])
+                                     for x1,y1,x2,y2 in boxes) if config else None
             jpeg = None
+            camera_jpeg = None
             if completed-last_jpeg >= 1/args.preview_hz:
                 preview = frame.copy()
                 if config:
@@ -106,13 +123,16 @@ def run_vision(args, monitor, stop):
                 if not ok:
                     raise RuntimeError('JPEG encoding failed')
                 jpeg = encoded.tobytes()
+                ok, raw = cv2.imencode('.jpg',frame,[cv2.IMWRITE_JPEG_QUALITY,75])
+                if ok:
+                    camera_jpeg = raw.tobytes()
                 last_jpeg = completed
-            monitor.update(data, jpeg)
+            monitor.update(data, jpeg, camera_jpeg)
             previous = completed
     except Exception as error:
         monitor.update(dict(state='error', error=str(error)))
     finally:
-        stop.set()
+        reader_stop.set()
         slot.close()
         if reader:
             reader.join(3)
@@ -127,6 +147,7 @@ def main():
     parser.add_argument('--video')
     parser.add_argument('--camera', type=int, default=0)
     parser.add_argument('--config')
+    parser.add_argument('--calibration-store', default='.runtime/web/calibration-camera.json')
     parser.add_argument('--loop', action='store_true')
     parser.add_argument('--model', default=str(Path(__file__).parent/'examples/yolov8n.pt'))
     parser.add_argument('--imgsz', type=int, default=640)
@@ -137,14 +158,27 @@ def main():
     if not 0 < args.preview_hz <= 15 or args.imgsz <= 0:
         parser.error('preview-hz must be >0 and <=15; imgsz must be positive')
     monitor = Monitor('video' if args.video else 'camera')
+    calibration = CalibrationStore(args.calibration_store)
+    if args.config:
+        from game import geometry
+        config = geometry.load(args.config)
+        calibration.save(config, calibration.snapshot()['revision'], *config['reference_size'])
     if args.db_config:
         from game.mariadb_store import MariaGameDatabase
         database = MariaGameDatabase(args.db_config)
     else:
         database = GameDatabase(args.database)
-    server = create_server(args.host,args.port,monitor,database)
+    server = create_server(args.host,args.port,monitor,database,calibration)
     stop = threading.Event()
-    worker = threading.Thread(target=run_vision,args=(args,monitor,stop),daemon=True)
+    def supervise():
+        while not stop.is_set():
+            monitor.update(dict(state='preparing',error=None))
+            run_vision(args,monitor,stop,calibration)
+            if args.video and monitor.snapshot()['state'] == 'ended':
+                return
+            if stop.wait(3):
+                return
+    worker = threading.Thread(target=supervise,daemon=True)
     worker.start()
     print('Monitor listening on {}:{}'.format(*server.server_address),flush=True)
     try:

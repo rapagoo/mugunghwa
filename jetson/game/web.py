@@ -7,22 +7,26 @@ import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from .mariadb_store import DatabaseUnavailable
+from .calibration_store import CalibrationConflict
 
 
 class Monitor:
     def __init__(self, source):
         self.condition = threading.Condition()
         self.jpeg = None
+        self.camera_jpeg = None
         self.serial = 0
         self.closed = False
         self.state = dict(source=source, state='preparing', error=None)
 
-    def update(self, data, jpeg=None):
+    def update(self, data, jpeg=None, camera_jpeg=None):
         with self.condition:
             self.state.update(data)
             if jpeg is not None:
                 self.jpeg = jpeg
                 self.serial += 1
+            if camera_jpeg is not None:
+                self.camera_jpeg = camera_jpeg
             self.condition.notify_all()
 
     def snapshot(self):
@@ -72,7 +76,7 @@ class GameDatabase:
                         events=[dict(e) for e in events])
 
 
-def create_server(host, port, monitor, database):
+def create_server(host, port, monitor, database, calibration=None):
     static = Path(__file__).resolve().parents[1] / 'web'
 
     class Handler(BaseHTTPRequestHandler):
@@ -90,17 +94,25 @@ def create_server(host, port, monitor, database):
         def do_GET(self):
             route = self.path.split('?', 1)[0]
             try:
-                if route in ('/', '/app.js', '/style.css'):
+                if route in ('/', '/app.js', '/style.css', '/calibrate', '/calibrate.js'):
                     name, mime = {'/': ('index.html','text/html; charset=utf-8'),
                                   '/app.js': ('app.js','text/javascript; charset=utf-8'),
-                                  '/style.css': ('style.css','text/css; charset=utf-8')}[route]
+                                  '/style.css': ('style.css','text/css; charset=utf-8'),
+                                  '/calibrate': ('calibrate.html','text/html; charset=utf-8'),
+                                  '/calibrate.js': ('calibrate.js','text/javascript; charset=utf-8')}[route]
                     self.send((static/name).read_bytes(), mime)
                 elif route in ('/api/vision', '/api/game'):
                     data = monitor.snapshot() if route == '/api/vision' else database.snapshot()
                     self.send(json.dumps(data, ensure_ascii=False, allow_nan=False).encode(), 'application/json; charset=utf-8')
-                elif route == '/frame.jpg':
+                elif route == '/api/calibration' and calibration is not None:
+                    data = calibration.snapshot()
+                    state = monitor.snapshot()
+                    data['frame_size'] = [state.get('width'), state.get('height')]
+                    data['applied_revision'] = state.get('calibration_revision')
+                    self.send(json.dumps(data).encode(), 'application/json; charset=utf-8')
+                elif route in ('/frame.jpg', '/camera.jpg'):
                     with monitor.condition:
-                        jpeg = monitor.jpeg
+                        jpeg = monitor.jpeg if route == '/frame.jpg' else monitor.camera_jpeg
                     self.send(jpeg or b'Preview preparing', 'image/jpeg' if jpeg else 'text/plain', 200 if jpeg else 503)
                 elif route == '/stream.mjpg':
                     self.connection.settimeout(10)
@@ -127,6 +139,42 @@ def create_server(host, port, monitor, database):
                 self.close_connection = True
             except (sqlite3.Error, DatabaseUnavailable):
                 self.send(b'Database unavailable', 'text/plain', 503)
+
+        def do_POST(self):
+            if self.path != '/api/calibration' or calibration is None:
+                self.send(b'Not found', 'text/plain', 404)
+                return
+            # JSON + same-origin browser request, not form submissions from other sites.
+            if (self.headers.get('Content-Type', '').split(';')[0] != 'application/json'
+                    or self.headers.get('X-Mugunghwa-Calibration') != '1'):
+                self.close_connection = True
+                self.send(b'JSON calibration request required', 'text/plain', 403)
+                return
+            origin = self.headers.get('Origin')
+            if origin and origin != 'http://' + self.headers.get('Host', ''):
+                self.close_connection = True
+                self.send(b'Origin mismatch', 'text/plain', 403)
+                return
+            try:
+                length = int(self.headers.get('Content-Length', '0'))
+                if not 0 < length <= 16384:
+                    raise ValueError('Invalid request length')
+                self.connection.settimeout(5)
+                body = json.loads(self.rfile.read(length))
+                state = monitor.snapshot()
+                if not state.get('width') or not state.get('height'):
+                    self.send(b'Camera preparing', 'text/plain', 409)
+                    return
+                data = calibration.save(body['config'], body['expected_revision'],
+                                        state['width'], state['height'])
+                self.send(json.dumps(data).encode(), 'application/json; charset=utf-8')
+            except CalibrationConflict as error:
+                self.send(str(error).encode(), 'text/plain; charset=utf-8', 409)
+            except (ValueError, KeyError, TypeError):
+                self.close_connection = True
+                self.send('설정 형식·영역·결승선·화면 비율을 확인해 주세요.'.encode(), 'text/plain; charset=utf-8', 400)
+            except OSError:
+                self.send(b'Calibration storage unavailable', 'text/plain', 503)
 
         def log_message(self, *args):
             pass
