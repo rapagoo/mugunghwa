@@ -782,6 +782,18 @@ Jetson MOVE→STOP→MOVE 추론 적용 확인을 거쳐 Pi CYCLE DONE 도달.
   남은 검증: 사용자가 구역 안에 서서 STM START를 누른 뒤 참가자 등록과 실제 TIME 감소,
   DB·웹·양 LCD 표시를 확인한다. 이번 모드 전환 자체는 실물 시간 표시 시험 결과가 아니다.
 
+- 2026-10-08 시작 버튼 무반응 조사: 이전 사운드 제어기 로그에 START에 따른 GAME ENROLL 요청과
+  empty/too many participants 거절이 여러 차례 남아 있어 버튼 경로가 동작한 것을 확인했다.
+  이 로그는 PID 8603의 것이며 현재 수동 재실행 PID 8697의 출력은 /dev/pts/1이다.
+  따라서 과거 로그를 현재 누른 버튼의 실시간 기록으로 단정하지 않는다.
+  현재 API는 HOME/REAR_OK, healthy=true, idle이다. 추론 running/calibrated=true,
+  people=1, track_id=56의 foot=[0.1426,0.999], in_roi=false를 조회했다.
+  현재 등록 가능한 구역 내 참가자가 없는 것이 확인됐고, 과거 START 시점의 정확한 관측은 저장하지 않았다.
+  구역 판정은 박스 하단 중앙 발 위치를 사용한다. 설정 구역 안에 발 위치가 들어온 뒤 START 재시험 필요.
+  현재 수동 클라이언트 인자는 --game --duration 20이며 --audio가 빠져 있다.
+  사운드 실행에는 --audio 추가 또는 tools/start_pi_game.py --duration 20을 사용한다.
+  이번 조사에서는 실행 중인 수동 클라이언트를 교체하거나 START를 대신 보내지 않았다.
+
 ### TS-LCD-001
 
 - 날짜/상태: 2026-10-08. 수정 후 STM·Arduino 실물 터미널 7/7 ACK 통과. 화면 확인/경기 시험은 아래 최신 결과 참조.
