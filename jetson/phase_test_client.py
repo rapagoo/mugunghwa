@@ -119,7 +119,7 @@ def session(host, port, web, audio=None):
                 except Exception:
                     send("GAME_ERROR"); game=None
                 next_observation=time.monotonic()+.2
-            if not select.select([conn],[],[],.1)[0]:
+            if not select.select([conn],[],[],audio.wait_timeout() if audio else .1)[0]:
                 continue
             chunk = conn.recv(256)
             if not chunk:

@@ -2,15 +2,19 @@
 import os
 from pathlib import Path
 import subprocess
+import time
 from collections import deque
 
 
 class Audio:
-    def __init__(self, folder, player='ffplay'):
+    def __init__(self, folder, player='ffplay', clock=time.monotonic):
         self.folder = Path(folder)
         self.player = player
         self.chant = None
-        self.shot = None
+        self.shots = []
+        self.clock = clock
+        self.next_shot = 0
+        self.shot_interval = .25
         self.shot_queue = deque()
         self.key = None
         self.seen = set()
@@ -43,20 +47,29 @@ class Audio:
         self.advance_shots()
 
     def advance_shots(self):
-        if self.shot is not None:
-            if self.shot.poll() is None:
-                return
-            if self.shot.wait() != 0:
+        running = []
+        for shot in self.shots:
+            if shot.poll() is None:
+                running.append(shot)
+            elif shot.wait() != 0:
                 print('SHOT_ERROR player exited unsuccessfully', flush=True)
-            self.shot = None
+        self.shots = running
+        if self.clock() < self.next_shot:
+            return
         while self.shot_queue:
             key = self.shot_queue.popleft()
             try:
-                self.shot = self.play('shot')
+                self.shots.append(self.play('shot'))
+                self.next_shot = self.clock() + self.shot_interval
                 print('SHOT_START '+str(key), flush=True)
                 return
             except (OSError, RuntimeError) as error:
                 print('SHOT_ERROR {} {}'.format(key,error), flush=True)
+
+    def wait_timeout(self, limit=.1):
+        if self.shot_queue:
+            return min(limit, max(0, self.next_shot-self.clock()))
+        return limit
 
     def poll(self):
         self.advance_shots()
@@ -77,7 +90,8 @@ class Audio:
     def close(self):
         self.shot_queue.clear()
         self.cancel()
-        if self.shot is not None:
-            if self.shot.poll() is None:
-                self.shot.terminate()
-            self.shot.wait(timeout=2)
+        for shot in self.shots:
+            if shot.poll() is None:
+                shot.terminate()
+            shot.wait(timeout=2)
+        self.shots.clear()
