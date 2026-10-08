@@ -1,0 +1,8 @@
+{
+    "cmake.defaultBuildTarget": "flash",
+    "cmake.options.advanced": {
+        "launch": { "statusBarVisibility": "hidden" },
+        "debug": { "statusBarVisibility": "hidden" },
+        "launchTarget": { "statusBarVisibility": "hidden" }
+    }
+}
