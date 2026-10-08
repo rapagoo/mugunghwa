@@ -85,7 +85,9 @@ printf 'stop\n' > .runtime/cycle-test/input
 tail -f .runtime/cycle-test/controller.log
 ```
 
-FIFO는 제어기가 실행 중일 때 사용한다. 재부팅 자동 실행은 설정하지 않았다.
+FIFO는 제어기가 실행 중일 때 사용한다. Pi 제어기의 재부팅 자동 실행은 설정하지 않았다.
+2026-10-08 Jetson 연결기는 mugunghwa-phase-bridge.service로 영구 자동 실행을 등록했다.
+서비스 실행 중에는 이 문서의 수동 연결기 실행 명령을 중복 실행하지 않는다.
 Jetson 백그라운드 브리지 로그/PID는 `.runtime/cycle-test/bridge.log`, `bridge.pid`다.
 웹의 관절 시험 단계에서 stop/move를 확인하고 관절 점수/후보를 관찰한다.
 화면 갱신은5Hz이며 전체 통신/물리 동작 지연은 별도 검증해야 한다.

@@ -1,0 +1,18 @@
+[Unit]
+Description=Mugunghwa Pi phase and cycle bridge
+Wants=network-online.target mugunghwa-web.service
+After=network-online.target mugunghwa-web.service
+
+[Service]
+Type=simple
+User=jetson
+WorkingDirectory=/home/jetson/projects/mugunghwa/repo
+ExecStart=/home/jetson/yolo_v8/bin/python -u jetson/phase_test_client.py --host 10.10.16.90 --port 5000 --web http://127.0.0.1:8080
+Restart=always
+RestartSec=3
+KillSignal=SIGTERM
+TimeoutStopSec=10
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

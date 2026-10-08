@@ -33,12 +33,15 @@
 ## 관절 웹 미리보기 선택/복귀
 
 동시에 GPU 추론 웹 서버를 두 개 실행하지 않는다. 기존 서비스와 포즈 비교는 같은 서비스에서
-모델 경로만 선택한다. 기본 /etc/systemd/system/mugunghwa-web.service는 기존 박스 엔진이다.
+모델 경로만 선택한다. 2026-10-07 당시 기본 /etc 서비스는 기존 박스 엔진이었다.
 비교 시 deploy/pose-preview.conf를 /run/systemd/system/mugunghwa-web.service.d/pose-preview.conf에
 설치하고 daemon-reload/restart 한다. /run override는 재부팅하면 사라져 기본 박스 엔진으로 돌아간다.
+이것은 당시 임시 비교 방식이다. 2026-10-08부터 사용자 요청으로 /etc 서비스의 기본
+모델을 관절 엔진으로 영구 변경했다. 현재는 재부팅 후에도 관절 엔진을 선택한다.
 현재 활성 모델은 웹의 관절 검출 비교 안내와 /api/vision의 pose.enabled로 확인한다.
 
-기존 박스 엔진으로 복귀할 때는 아래를 Jetson에서 실행한다. 지정한 비교 파일 한 개만 제거한다.
+아래 명령은 과거 임시 비교 파일만 제거한다. 현재 영구 관절 설정을 박스 엔진으로
+되돌리는 명령이 아니다. 박스 복귀가 필요하면 /etc 서비스의 모델 경로를 별도로 변경해야 한다.
 
 ```bash
 sudo rm -f /run/systemd/system/mugunghwa-web.service.d/pose-preview.conf

@@ -1,6 +1,6 @@
 # 무궁화게임 트러블슈팅 기록
 
-최종 갱신: 2026-10-07 (Asia/Seoul).
+최종 갱신: 2026-10-08 (Asia/Seoul).
 
 프로젝트에서 확인한 문제와 조사·조치·검증을 축적하는 문서다.
 현재는 Jetson 영상 입력·추론 성능과 웹 모니터 구현 중 확인한 문제를 기록한다.
@@ -348,6 +348,24 @@ GPU 추론 시간이 크게 줄어든다고 가정하지 않는다.
   임시 선택 설정이 재부팅으로 지워진 예상 동작이며 엔진 파일은 보존돼 있었다.
   같은 /run drop-in을 다시 적용하고 재시작해 running/pose.enabled=true,
   640×480·구역 버전1·검출 간격68ms API 표본 확인. 영구 설정은 변경하지 않았다.
+- 2026-10-08 자동 실행 재확인: SSH에서 mugunghwa-web enabled/active, 실제 프로세스는
+  기본 박스 엔진 .runtime/trt-models/yolov8n-480x640-fp16.engine으로 실행 중이었다.
+  /run pose-preview drop-in이 없고 phase_test_client.py 프로세스도 없었다.
+  등록 서비스 목록에는 웹 서비스만 있었다. 웹 자동 실행과 관절 엔진 선택·단계 연결기
+  자동 실행은 서로 다르다. 이 조회에서는 서비스를 재시작하거나 영구 설정을 바꾸지 않았다.
+  관절 자동 회차 시험 재개 전 관절 엔진 선택 복구와 연결기 실행이 필요하다.
+- 2026-10-08 조치: 사용자 요청으로 /etc 웹 서비스 ExecStart를 관절 FP16 엔진으로
+  영구 변경하고 mugunghwa-phase-bridge.service를 설치/enable했다. 두 서비스는
+  네트워크 이후 시작하며 연결기는 웹 이후 시작·프로세스 실패 재실행·Pi 재접속을 수행한다.
+  기존 웹 unit을 .runtime/service-backup-20261008/mugunghwa-web.before.service에 백업했다.
+  unit 검증은 성공했으나 검증 도구에 호스트 기존 varlink/snap 장치 관련 경고가 있었다.
+  실제 두 서비스 enabled/active와 API running/pose.enabled=true를 확인했다.
+  연결기는 Pi TCP에 접속했으나 현재 Pi 일반 controller에 --cycle-test가 없어 PING 미수신으로
+  HEALTH Pi heartbeat missing을 보고했다. Pi 실행 모드는 변경하지 않았다.
+  이 영구 설정 적용 뒤 실제 재부팅 시험은 미실행이다. [서비스 관리](web-monitor.md#재부팅-자동-실행).
+  확인 중 Pi 서버 포트가 닫혀 Connection refused가 반복된 뒤 새 서버PID2961이
+  LISTEN 상태가 됐고, 연결기가 별도 수동 실행 없이 PHASE_BRIDGE_READY로 재접속했다.
+  Pi 서버의 종료/재시작은 이 작업에서 수행하지 않았다. 시험 하트비트 미수신은 남아 있다.
 
 ### TS-WEB-004
 
@@ -584,6 +602,9 @@ Jetson MOVE→STOP→MOVE 추론 적용 확인을 거쳐 Pi CYCLE DONE 도달.
   웹 시험 표시 추가 뒤 브라우저의 개별 처리50ms/검출 간격68ms를 확인했다
   (웹캠640×480/관절FP16/미리보기5Hz/기록 미실행). 갱신 간격 회복은 관측했지만
   같은 조건 조명 A/B 시험은 미실행이므로 자동 노출을 원인으로 확정하지 않는다.
+- 2026-10-08 영구 관절 서비스 재시작 후 사람0명/웹캠640×480/관절FP16/웹5Hz/기록 미실행
+  API 한 표본은 처리50.1ms·검출 간격118.8ms·결과 나이118ms였다. 안정 구간 평균,
+  조명 상태와 원인은 이 조회에서 측정하지 않았다. 단일 표본으로 성능 회귀를 확정하지 않는다.
 - 관련: [자동 회차 검증](cycle-trial.md).
 
 ### TS-NET-001

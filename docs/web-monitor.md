@@ -1,4 +1,4 @@
-# Jetson 웹 모니터 (2026-10-07 갱신)
+# Jetson 웹 모니터 (2026-10-08 갱신)
 
 같은 네트워크의 브라우저에서 `http://10.10.16.130:8080/`에 접속합니다.
 2026-10-07 확인한 현재 Jetson IP는 10.10.16.130이며, 기존 10.10.16.120 주소는 변경됐습니다.
@@ -33,16 +33,31 @@ ROI 밖 사람도 전체 검출 인원에는 포함되며 화면에서 별도 �
 ## 재부팅 자동 실행
 
 Jetson의 시스템 서비스 `mugunghwa-web.service`를 설치하고 enabled/active를 확인했습니다.
-Jetson 사용자로 웹캠·카메라용 480×640 FP16 엔진·Pi MariaDB 조회 설정을 사용합니다.
+2026-10-08부터 Jetson 사용자로 웹캠·관절용 480×640 FP16 엔진·Pi MariaDB 조회 설정을 사용합니다.
+관절 엔진 경로는 `.runtime/pose-models/yolov8n-pose-480x640-fp16.engine`이며
+영구 /etc 서비스 설정에 저장했다. /run 임시 선택 파일을 다시 만들 필요가 없다.
+
+`mugunghwa-phase-bridge.service`도 enabled/active로 등록했다. 웹 서비스와 네트워크 이후
+Pi 서버10.10.16.90:5000에 JETSON ID로 접속하며 Pi 서버가 늦게 켜지거나 연결이 끊기면
+3초 간격으로 재접속한다. 프로세스 종료 시 systemd가 다시 실행한다. 수동 연결기를
+같은 JETSON ID로 동시에 실행하지 않는다. Pi 서버/C controller 자동 실행은 이번 변경 범위가 아니다.
+Pi 게임 시험에는 controller의 `--cycle-test` 옵션이 필요하며 일반 COUNT 모드에는 PING이 없다.
 
 ```bash
 systemctl status mugunghwa-web.service
 sudo systemctl restart mugunghwa-web.service
 journalctl -u mugunghwa-web.service -n 50 --no-pager
+systemctl status mugunghwa-phase-bridge.service
+journalctl -u mugunghwa-phase-bridge.service -n 30 --no-pager
 ```
 
 서비스 파일은 `deploy/mugunghwa-web.service`입니다. 재등록은 `sudo install -m 644
 deploy/mugunghwa-web.service /etc/systemd/system/` 후 daemon-reload와 enable --now를 사용합니다.
+연결기는 `deploy/mugunghwa-phase-bridge.service`를 같은 방식으로 설치한다.
+2026-10-08 두 서비스 enabled/active와 실제 실행 명령, API running/pose.enabled=true 확인.
+Pi는 일반 controller로 실행 중이라 연결기 HEALTH Pi heartbeat missing이 나오는 것을 확인했다.
+수정 전 웹 unit은 Jetson `.runtime/service-backup-20261008/mugunghwa-web.before.service`에 보관했다.
+영구 등록·서비스 재시작까지 검증했으며 이 변경 뒤 실제 장비 재부팅은 하지 않았다.
 프로세스 오류는 systemd가 재시작하고, 카메라 입력/추론 오류는 웹 페이지를 유지한 채 3초 간격 재시도합니다.
 카메라가 늦게 연결돼도 복구하도록 구현했으며 실제 USB 분리/재연결 반복 검증은 남아 있습니다.
 모델 준비 중에는 준비 메시지와 첫 웹캠 사진이 보이고 준비 후 스트림이 계속 갱신됩니다.

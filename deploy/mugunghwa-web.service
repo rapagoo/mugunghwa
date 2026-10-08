@@ -9,7 +9,7 @@ User=jetson
 WorkingDirectory=/home/jetson/projects/mugunghwa/repo
 Environment=PYTHONPATH=/home/jetson/projects/mugunghwa/repo/.runtime/web/vendor
 Environment=YOLO_AUTOINSTALL=false
-ExecStart=/home/jetson/yolo_v8/bin/python -u jetson/web_server.py --camera 0 --model .runtime/trt-models/yolov8n-480x640-fp16.engine --db-config .runtime/db/web.json --calibration-store .runtime/web/calibration-camera.json
+ExecStart=/home/jetson/yolo_v8/bin/python -u jetson/web_server.py --camera 0 --model .runtime/pose-models/yolov8n-pose-480x640-fp16.engine --db-config .runtime/db/web.json --calibration-store .runtime/web/calibration-camera.json
 Restart=on-failure
 RestartSec=5
 KillSignal=SIGINT
