@@ -11,6 +11,8 @@ static unsigned long game_version;
 static double game_end, game_join_deadline, game_move_until, game_move_seconds = 5;
 static double game_hold_min=2, game_hold_max=5;
 static int game_audio;
+static int game_audio_pending;
+static double game_audio_due;
 static unsigned int game_audio_token;
 static char game_id[33], game_started[32], game_journal[1024], game_repo[1024];
 static volatile sig_atomic_t game_shutdown;
@@ -125,10 +127,11 @@ static void game_move(int sock)
     cycle_state=C_PLAY_MOVE; game_move_until=monotonic_seconds()+game_move_seconds;
     game_phase="move"; game_save("move",0); cycle_report(sock,monotonic_seconds());
     if(game_audio) {
-        char msg[LINE_SIZE]; game_audio_token=cycle_request;
-        game_move_until=monotonic_seconds()+30;
-        snprintf(msg,sizeof(msg),"[JETSON]AUDIO@%s@%08x@CHANT\n",game_id,game_audio_token);
-        send_all(sock,msg); printf("GAME AUDIO request %08x\n",game_audio_token);
+        double delay=.5+1.5*((double)rand()/RAND_MAX);
+        game_audio_pending=1; game_audio_token=cycle_request;
+        game_audio_due=monotonic_seconds()+delay;
+        game_move_until=game_audio_due+30;
+        printf("GAME AUDIO delay %.3fs token=%08x\n",delay,game_audio_token);
     }
 }
 
@@ -138,7 +141,7 @@ static int game_line(int sock, const char *sender, const char *payload)
     unsigned int token; int n, consumed=0; long epoch, revision;
     char audio_id[33], audio_result[8];
     if(sscanf(payload,"AUDIO@%32[0-9a-f]@%8x@%7[A-Z]%n",audio_id,&token,audio_result,&consumed)==3 && !payload[consumed]) {
-        if(game_audio && game_active && cycle_state==C_PLAY_MOVE && !strcmp(audio_id,game_id) && token==game_audio_token) {
+        if(game_audio && !game_audio_pending && game_active && cycle_state==C_PLAY_MOVE && !strcmp(audio_id,game_id) && token==game_audio_token) {
             if(monotonic_seconds()>=game_end) game_finish(sock,"timeout",1);
             else if(!strcmp(audio_result,"DONE")) {
                 game_phase="front_wait"; game_save("front_wait",0); cycle_motor(sock,"FRONT",C_FRONT);
@@ -206,6 +209,11 @@ static void game_tick(int sock, double now)
     if(now>=game_end) { game_finish(sock,"timeout",1); return; }
     game_remaining=(int)ceil(game_end-now);
     if(game_remaining!=game_last_remaining) { game_last_remaining=game_remaining; game_save("tick",0); game_lcd(sock); }
+    if(game_audio && game_audio_pending && cycle_state==C_PLAY_MOVE && now>=game_audio_due) {
+        char msg[LINE_SIZE]; game_audio_pending=0; game_move_until=now+30;
+        snprintf(msg,sizeof(msg),"[JETSON]AUDIO@%s@%08x@CHANT\n",game_id,game_audio_token);
+        send_all(sock,msg); printf("GAME AUDIO request %08x\n",game_audio_token);
+    }
     if(cycle_state==C_PLAY_MOVE && now>=game_move_until) {
         if(game_audio) { game_finish(sock,"audio_timeout",0); return; }
         game_phase="front_wait"; game_save("front_wait",0); cycle_motor(sock,"FRONT",C_FRONT);

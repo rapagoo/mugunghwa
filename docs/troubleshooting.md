@@ -619,6 +619,22 @@ Jetson MOVE→STOP→MOVE 추론 적용 확인을 거쳐 Pi CYCLE DONE 도달.
 
 ### TS-NET-001
 
+#### 2026-10-08 · STM 재접속 의심 상태 확인
+
+- 증상/조건: 사용자가 STM 연결이 다시 안 되는 것 같다고 보고했다. 현재 Pi는
+  --game --duration 20 --audio로 실행 중이며 웹은 RECOVER/REAR_WAIT,
+  RECOVERY_TIMEOUT이다. Jetson healthy=true, idle로 응답했다.
+- 근거: STM으로 사용하던 TCP peer 10.10.16.162:38002가 ESTAB로 남아 있으나
+  Send-Q 150바이트, bytes_retrans=330, retrans=1/22, 마지막 수신 약288초 전으로 관측됐다.
+  Pi에서 해당 주소 ping 3회 응답0 및 Destination Host Unreachable,
+  ARP neighbor는 INCOMPLETE였다. 단순 MOTOR 완료 응답 형식 문제보다
+  기존 ESP-01 주소까지 현재 네트워크 도달이 안 되는 증거다.
+- 원인: 미확정. ESP-01 전원/무선 연결 끊김 또는 주소 변경 가능성이 있으며
+  신호 세기·STM UART AT 로그는 측정하지 않았다. ESTAB만으로 현재 연결 정상을 판단하지 않는다.
+- 조치/남은 일: 서버·제어기 재시작이나 완료 주입 없이 상태만 조사했다.
+  STM과 ESP-01 모두 재초기화 후 서버 STM 로그인과 MOTOR@REAR@OK/HOME 회복을 확인해야 한다.
+  기존 로그 파일은 이전 제어기 기록이며 현재 수동 실행 제어기의 실시간 버튼 로그로 사용하지 않았다.
+
 - 발견일/갱신: 2026-10-07. 상태: 증상 확인·원인 조사 중.
 - 증상/재현 조건: 사용자가 STM을 Jetson이 있는 방으로 옮긴 뒤 버튼을 눌러도
   작동하지 않는다고 보고했다. Pi 서버5000, Pi C 제어기 한 회차 시험(정지5초,
@@ -943,3 +959,17 @@ Jetson MOVE→STOP→MOVE 추론 적용 확인을 거쳐 Pi CYCLE DONE 도달.
   Pi는 --game --duration 20 --audio로 실행 중이나 STM REAR@OK가 오지 않아
   RECOVERY_TIMEOUT 상태로 자동 복귀 재시도 중이다. TCP 연결 잔존만으로 STM 응답 가능을
   확정하지 않았다. 사용자에게 STM 리셋/재연결과 USB 청음 확인을 요청했다.
+
+#### TS-AUDIO-001 · 흐름 검증 및 랜덤 대기 (2026-10-08)
+
+- 사용자가 실제 경기 흐름 검증 완료를 보고했다. 음원 시작 전 Pi가 0.5~2초 랜덤 대기를
+  결정하도록 추가했다. 대기 중 이동 허용과 경기 제한 시간 감소는 유지한다.
+- C 경고 엄격 빌드와 사운드 모의 통합 시험, 재생 오류 중단/복귀 시험 통과.
+  새 랜덤 대기 자체의 실물 플레이 시험은 아직 하지 않았다.
+- 배포 직전 HOME을 확인하고 기존 제어기를 교체했으나 새 클라이언트에서 connect failed 발생.
+  Pi 서버 프로세스와 5000 listen이 사라진 것을 확인했다. 서버 종료 원인은 미확정이다.
+  기존 로그인 설정으로 서버를 복구하고 20초 --audio 제어기를 재실행했다.
+  서버 복구 로그: Pi `.runtime/server/recovery.log` (Git 제외).
+- 최종 상태: 서버5000과 Pi 제어기 실행, Jetson 재접속/healthy/idle 확인.
+  현재 서버 연결은 PI와 JETSON 두 개뿐이며 STM·ARD 재로그인은 아직 없다.
+  STM REAR 응답 미수신으로 복귀 잠금 유지. STM 재연결과 Bluetooth 중계 재시작 후 현장 시험 필요.
