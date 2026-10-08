@@ -130,3 +130,11 @@ Jetson STOP·STM REAR 복귀 확인 후 고정 COUNT/TIME 값과 양 보드 APPL
 START/FRONT나 실제 경기 DB는 생성하지 않는다. 종료 후 `python3 tools/start_pi_game.py`로
 게임 제어기를 다시 켠다. 2026-10-08 STM 7개 ACK·사용자 화면 변경 확인, ARD 7개 ACK 누락·
 화면 미변경으로 미통과. [TS-LCD-001](troubleshooting.md#ts-lcd-001)에 근거와 남은 조사를 기록했다.
+
+2026-10-08 Arduino 수정 후 같은 7개 명령을 재시험해 STM·ARD 모두 7/7 정확한 APPLIED 응답을 확인했다.
+현재 LCD-only 통신은 양 보드 통과이며, 앞 절의 ARD 미통과는 수정 전 이력이다.
+원본 로그는 Pi `.runtime/lcd-terminal-retest-20261008.log`. 최종 표시는 시간0/전체0/통과0/탈락0으로
+정리하고 --game 180초 대기 상태로 복구했다. 실제 플레이 검증은 별도로 진행한다.
+
+화면을 보며 확인하려면 `python3 tools/lcd_terminal_test.py --step-seconds 2`로 각 값을 2초 유지할 수 있다.
+STM 리셋 후 이 조건으로 재시험했고 STM·ARD 모두 다시 7/7 ACK를 확인했다.

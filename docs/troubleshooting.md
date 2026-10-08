@@ -28,7 +28,7 @@
 | [TS-NET-001](#ts-net-001) | 2026-10-07 | STM 방 이동 후 버튼 회차 진행 불안정 | 서버 재접속 수정·하트비트 복구, 실물 재시험 대기 |
 | [TS-CONTROL-001](#ts-control-001) | 2026-10-07 | 정지 후 인형 방향 복귀 미확인 상태에서 재시작 가능 | 복귀·시작 잠금 구현, 사용자 동작 확인·ACK/HOME 재확인 |
 | [TS-CONTROL-002](#ts-control-002) | 2026-10-08 | 빠른 Jetson 연결기 재시작 시 경기 문맥 유실 | 재로그인 시 중단·복귀 및 모의 회귀 통과 |
-| [TS-LCD-001](#ts-lcd-001) | 2026-10-08 | Arduino COUNT/TIME 화면 갱신·적용 응답 없음 | STM 실물 통과, Arduino 수신 헤더 불일치 확인·재시험 대기 |
+| [TS-LCD-001](#ts-lcd-001) | 2026-10-08 | Arduino COUNT/TIME 화면 갱신·적용 응답 없음 | Arduino 수정 후 양 보드 COUNT/TIME 7/7 ACK 통과 |
 
 ## 공통 조건과 지표
 
@@ -775,7 +775,7 @@ Jetson MOVE→STOP→MOVE 추론 적용 확인을 거쳐 Pi CYCLE DONE 도달.
 
 ### TS-LCD-001
 
-- 날짜/상태: 2026-10-08. STM 실물 터미널 시험 통과, Arduino 소스 헤더 불일치 확인·실물 수정 재시험 대기.
+- 날짜/상태: 2026-10-08. 수정 후 STM·Arduino 실물 터미널 7/7 ACK 통과. 화면 확인/경기 시험은 아래 최신 결과 참조.
 - 증상/재현 조건: Pi 서버 5000과 Bluetooth ARD 중계를 유지하고 전용 PI 진단 클라이언트에서
   STM/ARD 각각 COUNT@2@0@0, TIME@180, TIME@179, COUNT@2@1@0, COUNT@2@1@1,
   TIME@0, COUNT@0@0@0을 순차 송신했다. 각 단계 8초 이내 정확한 APPLIED 응답을 검사했다.
@@ -827,3 +827,25 @@ Jetson MOVE→STOP→MOVE 추론 적용 확인을 거쳐 Pi CYCLE DONE 도달.
 - 이 결과는 AVR Arduino 코어/실제 라이브러리 빌드나 실물 업로드 성공이 아니다.
   로컬 arduino-cli가 없어 실제 Arduino 빌드는 미실행. 팀원이 IDE로 업로드 후 터미널 재시험 필요.
   모의 검사 산출물은 Pi `.runtime/arduino-lcd-check`에 두고 Git에서는 제외했다.
+
+#### TS-LCD-001 · 수정 후 양 보드 실물 재시험 (2026-10-08)
+
+- 사용자 수정·재연결 보고 후 기존과 같은 LCD-only 터미널 시험을 반복했다.
+  시작 전 HOME/REAR_OK·healthy를 확인했다. 서버와 ARD Bluetooth 중계는 유지했고,
+  기존 --cycle-test PI 연결을 진단 연결로 교체했다. 실제 게임 START/FRONT는 보내지 않았다.
+- 송신 조건: COUNT@2@0@0, TIME@180, TIME@179, COUNT@2@1@0, COUNT@2@1@1,
+  TIME@0, COUNT@0@0@0. 양 보드 각각 정확한 APPLIED 응답을 검사했다.
+- 검증 결과: STM 7/7, ARD 7/7 정확한 ACK 수신. STM REAR@OK도 확인했다.
+  수정 전 ARD 0/7과 달리 현재 경로의 COUNT/TIME 수신·적용 응답이 복구됨을 확인했다.
+  각 보드가 반환한 적용 완료 ACK이며, 에이전트가 LCD를 직접 촬영해 읽은 결과는 아니다.
+- 사용자에게 두 LCD 최종 표시 확인을 요청했고, 사용자가 STM 리셋 후 처음부터 재시험을 요청했다. 아래에서 재시험했다.
+- 원본 로그: Pi `.runtime/lcd-terminal-retest-20261008.log` (Git 제외).
+  진단 후 --game --duration 180을 다시 실행해 경기 시작 없이 복귀/대기하도록 했다.
+- 남은 일: 실제 플레이의 참가자 고정·통과/탈락·180초 만료와 DB/웹/LCD 동기화 검증.
+  이번 ACK 재시험이 Arduino 실제 UART 핀 번호나 모든 게임 동작의 검증을 대신하지 않는다.
+
+- STM 리셋 후 재시험: 사용자의 재시험 요청에 따라 각 값 적용 후 2초씩 유지하도록
+  `--step-seconds 2` 옵션을 추가하고 처음부터 반복했다. STM REAR@OK 및 양 보드 7/7 ACK를 다시 확인했다.
+  로그: Pi `.runtime/lcd-terminal-after-stm-reset-20261008.log` (Git 제외).
+  STM 초기화 중 최초 복귀 명령을 놓칠 때를 위해 REAR 확인은 최대 3회 재시도한다.
+  이번에는 첫 REAR 요청에 즉시 응답했다. 각 화면 값 자체에 대한 사용자 확인은 아직 별도다.
