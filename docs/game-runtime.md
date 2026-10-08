@@ -63,6 +63,7 @@ Jetson은 기존 웹 추론 결과를 최대 5Hz로 읽는다. 별도 모델/엔
 이후 들어온 ID는 무시한다. ID가 사라져도 즉시 탈락시키지 않고, ID 변경을 다른 참가자에 자동 연결하지 않는다.
 이 한계 때문에 실제 교차·가림 후 ID 유지 시험은 계속 필요하다. 시간 만료 시 미완료 ID도 탈락한다.
 카메라 epoch/구역 설정 버전이 바뀌면 경기를 중단하고 인형을 복귀시킨다.
+연결기 재로그인은 기존 경기 문맥을 복구한 것으로 취급하지 않고 경기를 중단·복귀한다.
 
 모든 아래 메시지는 LF로 끝나며 서버의 100바이트 제한 이내를 사용한다.
 
@@ -108,13 +109,13 @@ STM `server_parser.c`의 패킷 처리에서 `game_lcd_packet`을 호출하고, 
 송신 콜백을 `esp01_send_string`을 감싸는 void 함수에 연결한다. 기존 MOTOR/START/STOP 파서는 보존한다.
 Arduino도 같은 형식으로 구현할 수 있다. 두 LCD 행은 남는 칸을 공백으로 채워 출력한다.
 적용 완료 후 `[PI]APPLIED@COUNT@...`, `[PI]APPLIED@TIME@...`을 응답한다.
-TIME 반복 수신으로 자체 경기를 재시작하면 안 된다. 실제 보드 소스/배선은 이 저장소에 없으므로
+COUNT는 수 변경과 5초 주기 재전송, TIME은 매초 전송한다. TIME 반복 수신으로 자체 경기를 재시작하면 안 된다. 실제 보드 소스/배선은 이 저장소에 없으므로
 참고 파서의 호스트 시험 통과와 실제 펌웨어 반영/표시 성공은 구분한다.
 
 ## 검증 범위
 
 - `tests/game_integration.py`: 실제 C 서버/C 제어/Python 연결기/합성 HTTP 추론/양 보드 시뮬레이터.
-  참가자 고정·외부 ID 제외·결과 불변·COUNT/TIME·5초 시험 만료·STOP·0명 거부·epoch 변경 중단.
+  참가자 고정·외부 ID 제외·결과 불변·COUNT/TIME·5초 시험 만료·STOP·0명 거부·epoch 변경 중단·빠른 연결기 재시작 중단.
 - `tests/game_database.py`: 실제 MariaDB 트랜잭션, 중복/이전 버전 재생, 전체 rollback.
 - `tests/game_writer_recovery.py`: 별도 저장기 인증 실패 후 저널 유지·복구·체크포인트·중복 방지, TEST fixture 정리.
 - `tests/test_game_bridge.py`: 구역 등록, 단계 경계의 이전 통과 후보 제외, STOP 통과 탈락.

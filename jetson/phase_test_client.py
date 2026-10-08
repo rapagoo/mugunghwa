@@ -55,6 +55,9 @@ def session(host, port, web):
         if b'[JETSON] New connected!' not in reply:
             raise RuntimeError('JETSON login rejected; close another JETSON client')
         conn.settimeout(2)
+        # A reconnected bridge has lost its in-memory game/phase binding.
+        # Cancel any old Pi game even if reconnection took less than 3 seconds.
+        conn.sendall(b'[PI]TRIAL@ERROR\n')
         apply_phase(web,'IDLE')
         print('PHASE_BRIDGE_READY', flush=True)
         expected = None

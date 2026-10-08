@@ -7,10 +7,20 @@ import sys
 import tempfile
 import threading
 import time
+from contextlib import contextmanager
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT/'jetson'))
 from game.web import Monitor, create_server
 from cycle_integration import wait_until
+
+@contextmanager
+def debug_folder():
+    with tempfile.TemporaryDirectory() as directory:
+        try: yield directory
+        except Exception:
+            for log in Path(directory).glob('*.log'):
+                print(log.name+'\n'+log.read_text()[-6000:])
+            raise
 
 
 def main():
@@ -32,7 +42,7 @@ def main():
     web=create_server('127.0.0.1',0,monitor,DB()); http=threading.Thread(target=web.serve_forever);http.start()
     procs=[]; logs=[]; peers=[]
     try:
-        with tempfile.TemporaryDirectory() as tmp:
+        with debug_folder() as tmp:
             tmp=Path(tmp); (tmp/'idpasswd.txt').write_text('PI PASSWD\nJETSON PASSWD\nSTM PASSWD\nARD PASSWD\n')
             def launch(command,name,cwd=ROOT):
                 f=(tmp/(name+'.log')).open('w');logs.append(f)
@@ -89,9 +99,17 @@ def main():
             count=len(records());fixture['ids']=[];time.sleep(.1);start();time.sleep(.5)
             assert len(records())==count # Empty enrollment creates no game.
             fixture['ids']=[11];time.sleep(.1);start();wait_until(lambda:len(records())>count)
+            wait_until(lambda:(monitor.cycle_snapshot()['cycle'] or {}).get('stage')=='PLAY_MOVE')
             fixture['epoch']=2;wait_until(lambda:latest()['phase']=='aborted')
             assert latest()['reason']=='source_changed'
-            print('PASS game: frozen roster, outsider exclusion, immutable/duplicate results, both LCD packets, timeout all fail, STOP, empty roster, source-change abort')
+            home();oldid=latest()['id'];start();wait_until(lambda:latest()['id']!=oldid)
+            wait_until(lambda:(monitor.cycle_snapshot()['cycle'] or {}).get('stage')=='PLAY_MOVE')
+            bridge.terminate();bridge.wait(timeout=3)
+            launch([sys.executable,'-u',str(ROOT/'jetson/phase_test_client.py'),'--host','127.0.0.1','--port','15003',
+                '--web','http://127.0.0.1:'+str(web.server_port)],'bridge-reconnected')
+            wait_until(lambda:latest()['phase']=='aborted')
+            assert latest()['reason']=='communication_error'
+            print('PASS game: frozen roster, outsider exclusion, immutable/duplicate results, both LCD packets, timeout all fail, STOP, empty roster, source-change and fast bridge restart abort')
     except Exception:
         for name in ('controller','bridge'):
             if 'tmp' in locals() and (tmp/(name+'.log')).exists():print((tmp/(name+'.log')).read_text())

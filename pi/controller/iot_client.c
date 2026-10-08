@@ -135,6 +135,9 @@ static void handle_line(int sock, char *line, int target_mask)
     const char *sender = line + 1, *payload = closing + 1;
     game_device_seen(sender,payload);
     if(cycle_line(sock, sender, payload)) return;
+    if(game_enabled && (!strcmp(sender,"ARD") || !strcmp(sender,"STM")) && !strncmp(payload,"APPLIED@",8)) {
+        printf("LCD_ACK [%s]%s\n",sender,payload); return;
+    }
     int counts[3];
     double now = monotonic_seconds();
     for(int i = 0; i < PENDING_SIZE; i++)

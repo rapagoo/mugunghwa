@@ -11,7 +11,7 @@ function renderValidation(v) {
   const t=v.validation;
   latestValidation=v;
   validationReceivedAt=performance.now();
-  document.getElementById('reset-validation').disabled=v.state!=='running';
+  document.getElementById('reset-validation').disabled=v.state!=='running'||gameActive;
   if (!t) return;
   const m=v.motion_trial;
   const pose=v.pose_trial;

@@ -2,7 +2,7 @@ const el=id=>document.getElementById(id);
 const put=(id,value)=>{el(id).textContent=value};
 const ms=v=>v==null?'—':`${Math.round(v)} ms`;
 const labels={move:'이동 허용',stop:'정지 판정',move_preparing:'이동 준비',front_wait:'앞보기 대기',aborted:'중단',playing:'진행 중',passed:'통과',failed:'탈락',waiting:'대기',running:'진행 중',stopped:'정지',finished:'종료'};
-let visionConnected=false,gameConnected=false;
+let visionConnected=false,gameConnected=false,gameActive=false;
 function connection(){put('connection',visionConnected?(gameConnected?'서버 연결됨':'영상 연결됨 · DB 확인 필요'):'영상 연결 확인 필요')}
 function rows(id,items,empty){
   const box=el(id);box.replaceChildren();box.className=items.length?'':'empty';
@@ -44,7 +44,7 @@ async function refreshGame(){
   try{
     const g=await get('/api/game');gameConnected=true;
     if(g.game){
-      const active=!['finished','aborted'].includes(g.game.phase);
+      const active=!['finished','aborted'].includes(g.game.phase);gameActive=active;
       const stale=active&&Date.now()-Date.parse(g.game.updated_at)>5000;
       for(const id of ['phase-move','phase-stop','phase-idle','reset-validation'])el(id).disabled=active;
       put('game-state',(stale?'상태 지연 · 마지막 기록 · ':'')+(g.game.is_test?'시험 데이터 · ':'')+(labels[g.game.phase]||g.game.phase));
@@ -52,6 +52,8 @@ async function refreshGame(){
       put('game-meta',`게임 ${g.game.id} · ${g.game.duration_seconds||180}초 · 종료 사유 ${g.game.end_reason||"—"} · DB 갱신 ${g.game.updated_at}`);put('total',g.participants.length);
       put('passed',g.participants.filter(p=>p.status==='passed').length);put('failed',g.participants.filter(p=>p.status==='failed').length);
     }else{
+      gameActive=false;
+      for(const id of ['phase-move','phase-stop','phase-idle'])el(id).disabled=false;
       put('game-state',g.backend==='mariadb'?'DB 연결됨 · 게임 대기':'연결 대기');put('remaining','— : —');
       put('game-meta','STM 시작 버튼으로 경기를 시작하면 표시됩니다.');for(const id of ['total','passed','failed'])put(id,'—');
     }

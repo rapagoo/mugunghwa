@@ -32,17 +32,18 @@ def apply(connection, record):
         if r['kind'] not in ('tick','device_ack'):
             cursor.execute('INSERT IGNORE INTO events (game_id,event_key,kind,participant_id,occurred_at) VALUES (%s,%s,%s,%s,%s)',
                 (r['id'],r['id']+':'+str(r['version']),r['kind'],'P%02d'%r['participant'] if r['participant'] else None,r['updated_at']))
-        cursor.execute('''INSERT INTO device_status (id,connection_state,last_seen_at,updated_at)
-            VALUES ('PI','connected',%s,%s) ON DUPLICATE KEY UPDATE
-            connection_state='connected',last_seen_at=VALUES(last_seen_at),updated_at=VALUES(updated_at)''',
-            (r['updated_at'],r['updated_at']))
-        for device in r.get('devices',[]):
-            if not device['at']:
-                continue
-            cursor.execute('''INSERT INTO device_status (id,connection_state,last_seen_at,last_ack,updated_at)
-                VALUES (%s,'connected',%s,%s,%s) ON DUPLICATE KEY UPDATE
-                connection_state='connected',last_seen_at=VALUES(last_seen_at),last_ack=VALUES(last_ack),updated_at=VALUES(updated_at)''',
-                (device['id'],device['at'],device['ack'],r['updated_at']))
+        if not r.get('is_test'):
+            cursor.execute('''INSERT INTO device_status (id,connection_state,last_seen_at,updated_at)
+                VALUES ('PI','connected',%s,%s) ON DUPLICATE KEY UPDATE
+                connection_state='connected',last_seen_at=VALUES(last_seen_at),updated_at=VALUES(updated_at)''',
+                (r['updated_at'],r['updated_at']))
+            for device in r.get('devices',[]):
+                if not device['at']:
+                    continue
+                cursor.execute('''INSERT INTO device_status (id,connection_state,last_seen_at,last_ack,updated_at)
+                    VALUES (%s,'connected',%s,%s,%s) ON DUPLICATE KEY UPDATE
+                    connection_state='connected',last_seen_at=VALUES(last_seen_at),last_ack=VALUES(last_ack),updated_at=VALUES(updated_at)''',
+                    (device['id'],device['at'],device['ack'],r['updated_at']))
 
 
 def run(journal, config_file):
