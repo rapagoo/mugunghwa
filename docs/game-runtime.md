@@ -121,3 +121,12 @@ COUNT는 수 변경과 5초 주기 재전송, TIME은 매초 전송한다. TIME 
 - `tests/test_game_bridge.py`: 구역 등록, 단계 경계의 이전 통과 후보 제외, STOP 통과 탈락.
 - `tests/lcd_protocol.c`: Pi 형식 COUNT/TIME·LCD 16칸·ACK·잘못된 입력 검사. 실제 LCD 하드웨어 시험 아님.
 - 기존 COUNT·회차·웹 API 회귀 시험 유지. 180초 실제 현장 만료와 실물 LCD는 사용자 시험 필요.
+
+## 실물 LCD 전용 터미널 시험
+
+`python3 tools/lcd_terminal_test.py`는 PI ID 전용 진단으로 실행 중 PI 제어기 연결을 교체한다.
+실제 플레이 중 사용하지 말고 먼저 시험을 중단한다. 서버와 Bluetooth 중계는 유지한다.
+Jetson STOP·STM REAR 복귀 확인 후 고정 COUNT/TIME 값과 양 보드 APPLIED를 검사하며
+START/FRONT나 실제 경기 DB는 생성하지 않는다. 종료 후 `python3 tools/start_pi_game.py`로
+게임 제어기를 다시 켠다. 2026-10-08 STM 7개 ACK·사용자 화면 변경 확인, ARD 7개 ACK 누락·
+화면 미변경으로 미통과. [TS-LCD-001](troubleshooting.md#ts-lcd-001)에 근거와 남은 조사를 기록했다.
