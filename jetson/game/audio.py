@@ -2,6 +2,7 @@
 import os
 from pathlib import Path
 import subprocess
+from collections import deque
 
 
 class Audio:
@@ -10,6 +11,7 @@ class Audio:
         self.player = player
         self.chant = None
         self.shot = None
+        self.shot_queue = deque()
         self.key = None
         self.seen = set()
 
@@ -36,14 +38,28 @@ class Audio:
     def fail(self, key):
         if key in self.seen:
             return
-        # Limit concurrent shots: several eliminations close together share one shot.
-        if self.shot is None or self.shot.poll() is not None:
-            if self.shot is not None:
-                self.shot.wait()
-            self.shot = self.play('shot')
         self.seen.add(key)
+        self.shot_queue.append(key)
+        self.advance_shots()
+
+    def advance_shots(self):
+        if self.shot is not None:
+            if self.shot.poll() is None:
+                return
+            if self.shot.wait() != 0:
+                print('SHOT_ERROR player exited unsuccessfully', flush=True)
+            self.shot = None
+        while self.shot_queue:
+            key = self.shot_queue.popleft()
+            try:
+                self.shot = self.play('shot')
+                print('SHOT_START '+str(key), flush=True)
+                return
+            except (OSError, RuntimeError) as error:
+                print('SHOT_ERROR {} {}'.format(key,error), flush=True)
 
     def poll(self):
+        self.advance_shots()
         if self.chant is not None and self.chant.poll() is not None:
             result = (self.key, self.chant.wait() == 0)
             self.chant = None
@@ -59,6 +75,7 @@ class Audio:
         self.key = None
 
     def close(self):
+        self.shot_queue.clear()
         self.cancel()
         if self.shot is not None:
             if self.shot.poll() is None:
