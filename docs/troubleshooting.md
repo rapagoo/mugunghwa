@@ -28,7 +28,7 @@
 | [TS-NET-001](#ts-net-001) | 2026-10-07 | STM 방 이동 후 버튼 회차 진행 불안정 | 서버 재접속 수정·하트비트 복구, 실물 재시험 대기 |
 | [TS-CONTROL-001](#ts-control-001) | 2026-10-07 | 정지 후 인형 방향 복귀 미확인 상태에서 재시작 가능 | 복귀·시작 잠금 구현, 사용자 동작 확인·ACK/HOME 재확인 |
 | [TS-CONTROL-002](#ts-control-002) | 2026-10-08 | 빠른 Jetson 연결기 재시작 시 경기 문맥 유실 | 재로그인 시 중단·복귀 및 모의 회귀 통과 |
-| [TS-LCD-001](#ts-lcd-001) | 2026-10-08 | Arduino COUNT/TIME 화면 갱신·적용 응답 없음 | STM 실물 통과, ARD 원인 조사 필요 |
+| [TS-LCD-001](#ts-lcd-001) | 2026-10-08 | Arduino COUNT/TIME 화면 갱신·적용 응답 없음 | STM 실물 통과, Arduino 수신 헤더 불일치 확인·재시험 대기 |
 
 ## 공통 조건과 지표
 
@@ -775,7 +775,7 @@ Jetson MOVE→STOP→MOVE 추론 적용 확인을 거쳐 Pi CYCLE DONE 도달.
 
 ### TS-LCD-001
 
-- 날짜/상태: 2026-10-08. STM 실물 터미널 시험 통과, Arduino 미통과·원인 미확정.
+- 날짜/상태: 2026-10-08. STM 실물 터미널 시험 통과, Arduino 소스 헤더 불일치 확인·실물 수정 재시험 대기.
 - 증상/재현 조건: Pi 서버 5000과 Bluetooth ARD 중계를 유지하고 전용 PI 진단 클라이언트에서
   STM/ARD 각각 COUNT@2@0@0, TIME@180, TIME@179, COUNT@2@1@0, COUNT@2@1@1,
   TIME@0, COUNT@0@0@0을 순차 송신했다. 각 단계 8초 이내 정확한 APPLIED 응답을 검사했다.
@@ -792,3 +792,22 @@ Jetson MOVE→STOP→MOVE 추론 적용 확인을 거쳐 Pi CYCLE DONE 도달.
   원본 로그: Pi `.runtime/lcd-terminal-20261008.log` (Git 제외). 이 진단은 실제 경기 DB를 생성하지 않는다.
 - 남은 일: Arduino 실제 업로드 코드/시리얼 수신 로그 확인 후 원인별 수정·동일 터미널 재시험.
   두 LCD 통과 이후 실제 플레이를 검증한다.
+
+#### TS-LCD-001 · Arduino 소스 검토 후 갱신 (2026-10-08)
+
+- 사용자 첨부 Arduino 소스에서 TIME은 `[ARD]TIME`/`TIME`, COUNT는 `[ARD]COUNT`/`COUNT`만
+  허용하며 `[PI]TIME`/`[PI]COUNT`를 처리하지 않는 것을 정적 검토로 확인했다. START/STOP도 같은 불일치다.
+  실제 업로드된 펌웨어가 첨부와 같다면 Pi가 보내는 두 명령을 모두 무시하므로 화면/ACK 미변경을 설명한다.
+  수정 후 실제 업로드/수신 성공은 아직 검증하지 않았다.
+- Pi 실행 파일 `/home/pi/Projects/mugunghwa/repo/pi/bluetooth/bluetooth_client`, 실행 cwd 및 소스 위치를 확인했다.
+  Pi/로컬 C 소스 SHA256이 일치한다. 서버→Bluetooth에서 헤더를 바꾸지 않고 수신 바이트를 그대로 write한다.
+  Pi가 ARD 앞으로 송신한 명령은 서버에서 발신자 PI 헤더로 바뀐다. 중계가 이를 ARD로 바꾸면 안 된다.
+- Arduino의 `[PI]APPLIED@COUNT@...`/`[PI]APPLIED@TIME@...` 송신과 println의 LF 포함은 현재 규약과 맞는다.
+  수신 비교의 `[ARD]`를 `[PI]`로 맞추는 것이 우선 조치다.
+- 별도 보완점: Arduino 기본 시간이 300초이고 자체 remainingSeconds--가 존재한다.
+  현재 합의는 Pi가 매초 남은 시간을 계산하므로 보드는 자체 차감 없이 TIME 값만 표시해야 한다.
+  아직 수정하지 않았다. 9600/D2 RX/D3 TX는 첨부 코드 설정이며 실제 모듈 설정/배선은 미확인이다.
+- Pi 중계 정적 점검: 100바이트 배열에 total==100일 때 msg[total]=0을 써 경계를 벗어날 수 있고,
+  read 오류 시 누적값 접근/부분 write 처리가 부족하다. 이번 짧은 COUNT/TIME에서 이 문제가 발생한
+  증거는 없으며 헤더 불일치와 구분한다. 별도 중계 보완은 미실행이다.
+- 다음 검증: Arduino 수신 헤더·자체 타이머 수정 후 재업로드하고 동일 LCD-only 시험을 반복한다.
