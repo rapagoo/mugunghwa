@@ -774,6 +774,14 @@ Jetson MOVE→STOP→MOVE 추론 적용 확인을 거쳐 Pi CYCLE DONE 도달.
   README에 두 모드 동시 실행 금지와 새 실행 명령을 추가했다. 새 경기 참가자 등록 요청 당시
   웹캠 구역 안 0명으로 JOIN이 거절된 로그는 정상 시작 차단이며 연결 장애로 분류하지 않는다.
 
+- 2026-10-08 실제 경기 시간 미표시 문의 재확인: Pi PID 6526이 `--cycle-test`로 실행 중이었다.
+  시간 기능 코드 누락이 아니라 참가자·시간 기능이 없는 시험 모드 실행이 원인이다.
+  해당 프로세스만 종료하고 `tools/start_pi_game.py`로 `--game --duration 180`을 실행했다.
+  PID 7794의 실행 인자, GAME READY 및 STM REAR/Jetson IDLE 응답에 따른 HOME 완료를 확인했다.
+  서버·Bluetooth 중계는 유지했으며 경기 START는 보내지 않았다.
+  남은 검증: 사용자가 구역 안에 서서 STM START를 누른 뒤 참가자 등록과 실제 TIME 감소,
+  DB·웹·양 LCD 표시를 확인한다. 이번 모드 전환 자체는 실물 시간 표시 시험 결과가 아니다.
+
 ### TS-LCD-001
 
 - 날짜/상태: 2026-10-08. 수정 후 STM·Arduino 실물 터미널 7/7 ACK 통과. 화면 확인/경기 시험은 아래 최신 결과 참조.
@@ -882,3 +890,44 @@ Jetson MOVE→STOP→MOVE 추론 적용 확인을 거쳐 Pi CYCLE DONE 도달.
   확인되지 않은 상태에서 복귀 잠금을 해제하거나 완료를 주입하지 않았다.
 - 원인/남은 일: 미확정. Jetson 로컬 전원/부하/서비스/네트워크 상태 확인 후 SSH·웹·연결기 복구,
   Pi HOME 확인과 저장소 동기화가 필요하다. 참고: `.runtime/game/controller.log` (Pi, Git 제외).
+
+#### TS-NET-002 · 재기동 후 접속 복구 확인 (2026-10-08)
+
+- 조치/조건: 사용자 재기동 후 읽기 전용으로 SSH, 서비스, 웹 API 및 Pi 실행 프로세스를 확인했다.
+  이번 확인에서 서비스를 재시작하거나 게임 모드를 변경하지 않았다.
+- 검증 결과: Jetson SSH 접속 성공. 웹 및 phase-bridge 서비스 모두 active.
+  웹 cycle은 HOME/REAR_OK, healthy=true, applied_phase=idle을 반환했다.
+  vision은 running, calibrated=true, pose_enabled=true, people=0,
+  조회 시 result_age_ms=32였다. 이는 검출 프로세스 응답 확인이며 실제 사람이 들어온 시험은 아니다.
+- DB/웹: game API에서 connected=true, backend=mariadb를 확인했다.
+  game=null이며 참가자·이벤트 목록은 비어 있어 실제 경기 저장 검증은 아직 남아 있다.
+- Pi 상태: 서버·Bluetooth 중계·DB writer가 실행 중이며 현재 PI 클라이언트는 --cycle-test다.
+  실제 참가자·제한 시간·DB 경기 시험에는 --game --duration 180 모드가 필요하다.
+- 원인/남은 일: 접속 장애는 현재 복구됐지만 원인은 미확정이다. 재기동 후 복구만으로
+  메모리·연산 부하·Wi-Fi 중 특정 원인을 확정하지 않는다. 실제 경기 통합 시험 및
+  Jetson 저장소의 최신 문서 동기화는 별도로 진행한다.
+
+### TS-AUDIO-001
+
+- 날짜/조건: 2026-10-08 사용자가 구호·총소리 MP3를 제공하고 Jetson USB 스피커 사용을 확인했다.
+- 증상/근거: PulseAudio에는 USB와 보드 analog 출력이 모두 있었으며 기본 sink는 analog였다.
+  USB 스피커에서 무음이 실제 발생했다고 확인한 것은 아니며, 출력 장치 선택의 불일치를 확인했다.
+- 조치: USB를 기본 출력으로 지정하고 음소거를 해제했다. 연결기 서비스에도 USB PULSE_SINK와
+  XDG_RUNTIME_DIR을 [설정](../tools/systemd/jetson-audio.conf)으로 지정했다.
+  사용자 음원은 Jetson `.runtime/audio`에 보관하며 Git에서 제외했다.
+- 기능: Pi --audio는 구호 완료 응답 후 FRONT를 요청하고, 확정된 새 탈락만 효과음을 요청한다.
+  구호 재생 오류·30초 응답 누락 시 중단/뒤보기 복귀한다. 중지·종료·연결 해제 시 구호를 취소한다.
+  재생 중 겹친 탈락은 효과음 하나로 합친다. 상세: [실행 문서](game-runtime.md).
+- 검증: USB sink를 지정한 ffplay로 구호 약5.982초와 총소리 약1.992초 재생 명령 종료 코드0 확인.
+  직접 청음은 하지 못했다. Pi C -O2 -Wall -Wextra -Werror 빌드 통과.
+  실제 C/서버/연결기와 모의 재생기로 음원 완료 전 FRONT 차단, 이후 경기 진행·탈락·만료·중지
+  통합 시험 통과. 기존 무음 경기 회귀 시험도 통과. 재생기 exit1에서 audio_error 중단과 HOME 복귀 통과.
+- 시험 중 조치: 최초 모의 시험은 Pi 시험 환경의 연결기가 구버전이라 --audio-dir 인자를 거절했다.
+  최신 연결기와 audio 모듈을 반영한 뒤 재시험해 통과했다. 실제 장치 통신 문제와 구분한다.
+- 배포: Jetson 연결기를 재시작하고 대기 중인 Pi 20초 클라이언트를 --audio 포함 실행으로 교체했다.
+  실제 START는 보내지 않았다. 남은 일: 실제 USB 청음, 음원 종료/모터 회전/정지 판정 동기화,
+  총소리·LCD·DB 현장 경기 검증. 30초 무응답 경로와 재부팅 후 출력 유지 실물 시험은 미실행이다.
+- 배포 후 최종 확인: Jetson 연결기 active, HEALTH ready, IDLE 적용 응답 확인.
+  Pi는 --game --duration 20 --audio로 실행 중이나 STM REAR@OK가 오지 않아
+  RECOVERY_TIMEOUT 상태로 자동 복귀 재시도 중이다. TCP 연결 잔존만으로 STM 응답 가능을
+  확정하지 않았다. 사용자에게 STM 리셋/재연결과 USB 청음 확인을 요청했다.

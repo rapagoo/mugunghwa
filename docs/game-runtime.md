@@ -1,7 +1,30 @@
 # 참가자·180초 경기·DB·LCD 연결
 
+## Jetson 스피커 사운드 (2026-10-08)
+
+`python3 tools/start_pi_game.py --duration 20`은 이제 사운드를 활성화한다.
+C 클라이언트를 직접 실행하면 `--game --duration 20 --audio`를 사용한다.
+`--audio`를 생략하거나 실행 도구에 `--no-audio`를 주면 기존 5초 이동 시험을 유지한다.
+
+- Jetson `.runtime/audio/chant.mp3`와 `shot.mp3`를 사용한다. 사용자 음원은 Git에 넣지 않는다.
+- 이동 판정 적용 완료 뒤 구호를 재생한다. Pi는 재생 완료 응답을 받고 FRONT를 명령한다.
+  정지 판정은 기존처럼 STM FRONT@OK 이후 Jetson STOP 적용 완료부터 시작한다.
+- 구호 파일 길이는 약 5.982초다. 현재 재생 전 랜덤 대기는 추가하지 않았다.
+  정지 유지 2~5초 랜덤은 유지하며 뒤보기 완료·MOVE 적용 완료 뒤 다음 구호를 재생한다.
+- Pi가 새 탈락을 확정할 때만 총소리를 요청한다. 중복 관측은 재생을 유발하지 않는다.
+  시간 만료 탈락도 포함한다. 약 1.992초 총소리 재생 중 여러 탈락은 한 소리로 합친다.
+- 구호 재생은 비동기이며 제한 시간·중지 처리를 막지 않는다. 경기 종료·IDLE·연결 해제 시
+  구호를 취소한다. 총소리는 경기 종료 후에도 끝까지 재생한다.
+- 구호 재생 오류는 audio_error, 30초 내 완료 응답 누락은 audio_timeout으로 중단·뒤보기 복귀한다.
+  총소리 재생 오류는 연결기 로그에 남기며 판정 결과를 취소하지 않는다.
+- Jetson 연결기 서비스의 출력은 USB sink로 지정했다. 스피커 교체 시 sink 설정을 확인한다.
+
+통신: Pi → Jetson `AUDIO@경기ID@단계토큰@CHANT`, Jetson → Pi
+`AUDIO@경기ID@단계토큰@DONE` 또는 `ERROR`. 이전 경기/단계의 완료 응답은 무시한다.
+탈락 효과음은 Pi → Jetson `SOUND@경기ID@FAIL@참가자번호`다.
+
 갱신: 2026-10-08. Pi C `--game` 모드 구현. 실제 새 경기/LCD 표시는 사용자 현장 검증 필요.
-기존 `--cycle-test`는 한 회차 시험용으로 보존했다. 음원은 아직 연결하지 않았다.
+기존 `--cycle-test`는 한 회차 시험용으로 보존했다. 사운드 실행은 위 설정을 따른다.
 
 ## 실행과 현장 시험
 
@@ -17,7 +40,7 @@ tail -f .runtime/game/controller.log
 
 ```bash
 cd pi/controller
-./iot_client 127.0.0.1 5000 PI --game --duration 180
+./iot_client 127.0.0.1 5000 PI --game --duration 180 --audio
 ```
 
 서버·Bluetooth ARD 중계는 별도로 유지한다. Jetson 웹/연결기는 등록된 두 서비스로 자동 실행한다.
@@ -50,6 +73,20 @@ Pi C 클라이언트가 참가자, 결과, 단조 시계 기반 180초, 랜덤 �
 현재 음원 대신 이동 허용 5초 뒤 FRONT를 요청한다. FRONT OK → Jetson STOP 적용 OK → 정지 판정.
 앞보기 완료 후 Pi가 2~5초 랜덤 유지 후 REAR를 요청한다. REAR OK → MOVE 적용 OK → 다음 회차.
 `--move-seconds`, `--duration`으로 시험 조건을 바꿀 수 있고 `--hold-seconds`는 랜덤 대신 고정 대기다.
+
+### 20초 단축 경기 시험
+
+실행 중인 PI 클라이언트를 종료한 뒤 저장소 루트에서 다음 명령을 실행한다.
+서버와 Bluetooth 중계는 유지한다. 실행만으로 경기가 시작되지는 않는다.
+
+```sh
+python3 tools/start_pi_game.py --duration 20
+```
+
+터미널에서 직접 실행할 때는 `./pi/controller/iot_client 127.0.0.1 5000 PI --game --duration 20`을 사용한다.
+참가자 확정·판정·DB 저장·LCD 전송은 일반 경기와 같고, 제한 시간만 20초다.
+시간 만료 시 남은 참가자는 모두 탈락한다. DB에도 제한 시간 20초인 경기로 저장된다.
+기본 180초로 돌아가려면 기존 클라이언트를 종료하고 `python3 tools/start_pi_game.py`를 실행한다.
 정지 판정 중 결승선 통과는 통과가 아닌 탈락이다. 앞보기 회전 중에는 STOP 적용 전까지 이동 허용이다.
 
 Jetson은 기존 웹 추론 결과를 최대 5Hz로 읽는다. 별도 모델/엔진 프로세스를 만들지 않는다.

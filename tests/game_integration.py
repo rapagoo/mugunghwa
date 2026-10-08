@@ -1,5 +1,6 @@
 """Real C/server/bridge integration with synthetic cached inference; no physical boards."""
 import json
+import os
 from pathlib import Path
 import socket
 import subprocess
@@ -44,15 +45,22 @@ def main():
     try:
         with debug_folder() as tmp:
             tmp=Path(tmp); (tmp/'idpasswd.txt').write_text('PI PASSWD\nJETSON PASSWD\nSTM PASSWD\nARD PASSWD\n')
+            audio_error='--audio-error-test' in sys.argv
+            audio_test='--audio-test' in sys.argv or audio_error
+            env=os.environ.copy()
+            if audio_test:
+                (tmp/'chant.mp3').touch(); (tmp/'shot.mp3').touch()
+                player=tmp/'ffplay'; player.write_text('#!/bin/sh\nsleep 0.6\nexit '+('1' if audio_error else '0')+'\n'); player.chmod(0o700)
+                env['PATH']=str(tmp)+os.pathsep+env['PATH']
             def launch(command,name,cwd=ROOT):
                 f=(tmp/(name+'.log')).open('w');logs.append(f)
-                proc=subprocess.Popen(command,cwd=cwd,stdout=f,stderr=f,stdin=subprocess.PIPE,text=True)
+                proc=subprocess.Popen(command,cwd=cwd,stdout=f,stderr=f,stdin=subprocess.PIPE,text=True,env=env)
                 procs.append(proc);return proc
             server=launch([str(ROOT/'pi/server/iot_server'),'15003'],'server',tmp);time.sleep(.3)
             ctl=launch([str(ROOT/'pi/controller/iot_client'),'127.0.0.1','15003','PI','--game','--duration','5',
-                '--move-seconds','.6','--hold-seconds','.5','--ack-timeout','2','--journal',str(tmp/'events.jsonl'),'--no-db-writer'],'controller')
+                '--move-seconds','.6','--hold-seconds','.5','--ack-timeout','2','--journal',str(tmp/'events.jsonl'),'--no-db-writer']+(['--audio'] if audio_test else []),'controller')
             bridge=launch([sys.executable,'-u',str(ROOT/'jetson/phase_test_client.py'),'--host','127.0.0.1','--port','15003',
-                '--web','http://127.0.0.1:'+str(web.server_port)],'bridge')
+                '--web','http://127.0.0.1:'+str(web.server_port),'--audio-dir',str(tmp)],'bridge')
             received={'STM':[],'ARD':[]}
             def board(name):
                 conn=socket.create_connection(('127.0.0.1',15003));conn.sendall(('['+name+':PASSWD]').encode())
@@ -76,6 +84,16 @@ def main():
             def latest():return records()[-1]
             home();time.sleep(1.1);start()
             wait_until(lambda:records() and latest()['phase']=='move')
+            if audio_error:
+                wait_until(lambda:latest()['phase']=='aborted')
+                assert latest()['reason']=='audio_error'
+                assert '[PI]MOTOR@FRONT' not in received['STM']
+                home()
+                print('Audio error abort/rear recovery passed')
+                return
+            if audio_test:
+                time.sleep(.15)
+                assert '[PI]MOTOR@FRONT' not in received['STM'], 'Motor turned before sound completion'
             assert [p['track_id'] for p in latest()['players']]==[11,22]
             fixture['ids']=[11,22,33];fixture['passed']=[11,33]
             wait_until(lambda:latest()['players'][0]['status']=='passed')

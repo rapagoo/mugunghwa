@@ -10,6 +10,8 @@ static long game_epoch, game_revision;
 static unsigned long game_version;
 static double game_end, game_join_deadline, game_move_until, game_move_seconds = 5;
 static double game_hold_min=2, game_hold_max=5;
+static int game_audio;
+static unsigned int game_audio_token;
 static char game_id[33], game_started[32], game_journal[1024], game_repo[1024];
 static volatile sig_atomic_t game_shutdown;
 static char game_device_ack[3][101], game_device_at[3][32];
@@ -88,11 +90,19 @@ static void game_lcd(int sock)
     printf("GAME COUNTS total=%d passed=%d failed=%d remaining=%d\n",game_count,passed,failed,game_remaining);
 }
 
+static void game_shot(int sock, int participant)
+{
+    if(!game_audio) return;
+    char msg[LINE_SIZE];
+    snprintf(msg,sizeof(msg),"[JETSON]SOUND@%s@FAIL@%d\n",game_id,participant);
+    send_all(sock,msg);
+}
+
 static void game_finish(int sock, const char *reason, int timeout)
 {
     if(!game_active) { game_joining=0; return; }
     if(timeout) for(int i=0;i<game_count;i++) if(!game_status[i]) {
-        game_status[i]=2; game_save("timeout_failed",i+1);
+        game_status[i]=2; game_save("timeout_failed",i+1); game_shot(sock,i+1);
     }
     game_active=0; game_phase=!strcmp(reason,"all_resolved") || timeout?"finished":"aborted";
     game_reason=reason; if(timeout) game_remaining=0;
@@ -114,12 +124,29 @@ static void game_move(int sock)
 {
     cycle_state=C_PLAY_MOVE; game_move_until=monotonic_seconds()+game_move_seconds;
     game_phase="move"; game_save("move",0); cycle_report(sock,monotonic_seconds());
+    if(game_audio) {
+        char msg[LINE_SIZE]; game_audio_token=cycle_request;
+        game_move_until=monotonic_seconds()+30;
+        snprintf(msg,sizeof(msg),"[JETSON]AUDIO@%s@%08x@CHANT\n",game_id,game_audio_token);
+        send_all(sock,msg); printf("GAME AUDIO request %08x\n",game_audio_token);
+    }
 }
 
 static int game_line(int sock, const char *sender, const char *payload)
 {
     if(!game_enabled || strcmp(sender,"JETSON")) return 0;
     unsigned int token; int n, consumed=0; long epoch, revision;
+    char audio_id[33], audio_result[8];
+    if(sscanf(payload,"AUDIO@%32[0-9a-f]@%8x@%7[A-Z]%n",audio_id,&token,audio_result,&consumed)==3 && !payload[consumed]) {
+        if(game_audio && game_active && cycle_state==C_PLAY_MOVE && !strcmp(audio_id,game_id) && token==game_audio_token) {
+            if(monotonic_seconds()>=game_end) game_finish(sock,"timeout",1);
+            else if(!strcmp(audio_result,"DONE")) {
+                game_phase="front_wait"; game_save("front_wait",0); cycle_motor(sock,"FRONT",C_FRONT);
+            } else if(!strcmp(audio_result,"ERROR")) game_finish(sock,"audio_error",0);
+        }
+        return 1;
+    }
+    consumed=0;
     if(game_joining && sscanf(payload,"JOIN_BEGIN@%8x@%d@%ld@%ld%n",&token,&n,&epoch,&revision,&consumed)==4 && !payload[consumed]) {
         if(token==game_join_token && n>0 && n<=32) {
             game_join_expected=n; game_count=0; game_epoch=epoch; game_revision=revision;
@@ -161,7 +188,7 @@ static int game_line(int sock, const char *sender, const char *payload)
         if(!verdict) return 1;
         int unfinished=0;
         for(int i=0;i<game_count;i++) {
-            if(game_ids[i]==n && !game_status[i]) { game_status[i]=verdict; game_save(verdict==1?"passed":"failed",i+1); game_lcd(sock); }
+            if(game_ids[i]==n && !game_status[i]) { game_status[i]=verdict; game_save(verdict==1?"passed":"failed",i+1); game_lcd(sock); if(verdict==2) game_shot(sock,i+1); }
             unfinished+=!game_status[i];
         }
         if(!unfinished) game_finish(sock,"all_resolved",0);
@@ -180,6 +207,7 @@ static void game_tick(int sock, double now)
     game_remaining=(int)ceil(game_end-now);
     if(game_remaining!=game_last_remaining) { game_last_remaining=game_remaining; game_save("tick",0); game_lcd(sock); }
     if(cycle_state==C_PLAY_MOVE && now>=game_move_until) {
+        if(game_audio) { game_finish(sock,"audio_timeout",0); return; }
         game_phase="front_wait"; game_save("front_wait",0); cycle_motor(sock,"FRONT",C_FRONT);
     }
 }

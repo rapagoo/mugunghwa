@@ -184,6 +184,7 @@ int main(int argc, char *argv[])
     for(int i=4; i<argc; i++) {
         if(!strcmp(argv[i], "--game")) { game_enabled=cycle_enabled=1; continue; }
         if(!strcmp(argv[i], "--no-db-writer")) { game_no_writer=1; continue; }
+        if(!strcmp(argv[i], "--audio")) { game_audio=1; continue; }
         if(!strcmp(argv[i], "--cycle-test")) { cycle_enabled = 1; continue; }
         if(i+1 >= argc) fail("Missing option value");
         const char *option = argv[i], *value = argv[++i];

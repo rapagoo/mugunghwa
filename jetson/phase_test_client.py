@@ -6,8 +6,10 @@ import select
 import signal
 import socket
 import time
+from pathlib import Path
 from urllib.request import Request, urlopen
 from game.game_bridge import enroll, observations
+from game.audio import Audio
 
 
 def web_json(web, path, body=None):
@@ -43,7 +45,7 @@ def apply_phase(web, phase):
     raise RuntimeError('Phase not applied by inference')
 
 
-def session(host, port, web):
+def session(host, port, web, audio=None):
     with socket.create_connection((host, port), timeout=5) as conn:
         conn.sendall(b'[JETSON:PASSWD]')
         reply = bytearray()
@@ -73,6 +75,11 @@ def session(host, port, web):
             conn.sendall(('[PI]'+payload+'\n').encode())
         while True:
             now = time.monotonic()
+            completed = audio.poll() if audio else None
+            if completed:
+                key, ok = completed
+                send('AUDIO@{}@{}@{}'.format(key[0],key[1],'DONE' if ok else 'ERROR'))
+                print('AUDIO_COMPLETE {} {}'.format(key,ok),flush=True)
             if now >= next_health:
                 try:
                     state = web_json(web,'/api/vision')
@@ -151,13 +158,33 @@ def session(host, port, web):
                 if active:
                     game=(active[1],int(active[2]),int(active[3])); continue
                 if text == '[PI]GAME@END':
+                    if audio: audio.cancel()
                     game=None; continue
+                sound = re.fullmatch(r'\[PI\]AUDIO@([0-9a-f]{32})@([0-9a-f]{8})@CHANT',text)
+                if sound:
+                    key=(sound[1],sound[2])
+                    try:
+                        if not audio or not game or game[0]!=key[0]:
+                            raise RuntimeError('Audio/game unavailable')
+                        audio.start(key)
+                        print('AUDIO_CHANT '+str(key),flush=True)
+                    except Exception as error:
+                        send('AUDIO@{}@{}@ERROR'.format(*key))
+                        print('AUDIO_ERROR '+str(error),flush=True)
+                    continue
+                shot = re.fullmatch(r'\[PI\]SOUND@([0-9a-f]{32})@FAIL@(\d+)',text)
+                if shot:
+                    if audio and game and game[0]==shot[1]:
+                        try: audio.fail((shot[1],'FAIL',shot[2]))
+                        except Exception as error: print('SHOT_ERROR '+str(error),flush=True)
+                    continue
                 if text == '[PI]STOP':
                     expected = apply_phase(web,'IDLE'); continue
                 match = re.fullmatch(r'\[PI\]PHASE@(MOVE|STOP|IDLE)@([0-9a-f]{8})',text)
                 if not match:
                     continue
                 phase, token = match.groups()
+                if phase == 'IDLE' and audio: audio.cancel()
                 ack = 'PHASE@{}@{}@OK'.format(phase,token)
                 if token in cached:
                     if cached[token] == ack: send(ack)
@@ -179,21 +206,25 @@ def main():
     parser.add_argument('--host',default='10.10.16.90')
     parser.add_argument('--port',type=int,default=5000)
     parser.add_argument('--web',default='http://127.0.0.1:8080')
+    parser.add_argument('--audio-dir',default=str(Path(__file__).resolve().parents[1]/'.runtime/audio'))
     args=parser.parse_args()
     def shutdown(signum, frame):
         raise KeyboardInterrupt
     signal.signal(signal.SIGTERM,shutdown)
+    audio=Audio(args.audio_dir)
     try:
         while True:
-            try: session(args.host,args.port,args.web)
+            try: session(args.host,args.port,args.web,audio)
             except (OSError,ValueError,RuntimeError) as error:
                 print('BRIDGE_RECONNECT '+str(error),flush=True)
+                audio.cancel()
                 try: apply_phase(args.web,'IDLE')
                 except Exception: pass
                 time.sleep(3)
     except KeyboardInterrupt:
         pass
     finally:
+        audio.close()
         try: apply_phase(args.web,'IDLE')
         except Exception: pass
 

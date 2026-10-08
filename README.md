@@ -48,10 +48,12 @@ make -C pi/bluetooth
 Pi 서버와 Bluetooth 중계는 기존처럼 켜고, PI 클라이언트는 다음 하나만 실행합니다.
 
 ```bash
-./pi/controller/iot_client 127.0.0.1 5000 PI --game --duration 180
+./pi/controller/iot_client 127.0.0.1 5000 PI --game --duration 180 --audio
 ```
 
 백그라운드 실행은 `python3 tools/start_pi_game.py`입니다.
+20초 단축 경기 시험은 `python3 tools/start_pi_game.py --duration 20`으로 실행합니다.
+실행 중인 PI 클라이언트를 먼저 종료해야 하며, 옵션을 생략하면 기본 180초입니다.
 Jetson 웹과 연결기는 등록된 서비스로 자동 실행합니다.
 복귀 완료 HOME → 사람이 구역 안에 들어오기 → STM START 순서입니다.
 0명일 때는 시작하지 않습니다. 시간 만료 시 남은 참가자는 모두 탈락합니다.
@@ -82,7 +84,8 @@ RUN/STOP/RESET은 보내지 않습니다.
 ## 현재 제한
 
 기본 COUNT 중계 모드는 통신 진단용이고 --game이 실제 참가자/게임 상태를 관리합니다.
-오디오와 MCU TIME 펌웨어 반영·180초 현장 시험은 남아 있습니다.
+Jetson USB 사운드 연동을 구현했습니다. MCU TIME 양 보드 표시 시험은 통과했고,
+사운드와 실제 경기 전체 흐름·180초 현장 시험은 남아 있습니다.
 서버는 인증 후 LF 단위로 메시지를 누적하고 여러 줄·초과 길이를 처리합니다.
 서버 로그인 분할 수신·부분 송신·동일 ID 재접속 처리는 보완했습니다. 무선 단절의 현장 검증은 별도입니다.
 MCU는 로그인 알림과 명령을 구분해야 합니다.
