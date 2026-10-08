@@ -17,12 +17,13 @@ Pi의 기존 `game` 코드와 Jetson의 TCP·영상 예제를 기준으로 시�
 [관절 검출 비교 전 백업·복원 절차](docs/backup-before-pose.md).
 [별도 관절 모델·속도 비교·웹 미리보기](docs/pose-comparison.md).
 [웹 시험 시작·중지와 원본 프레임·좌표 기록](docs/pose-recording.md).
+[참가자·180초 경기·DB·LCD 실행](docs/game-runtime.md).
 
 ## 구성
 
 - `pi/server`: TCP 메시지 중계 서버와 로그인 ID 설정.
 - `pi/bluetooth`: Arduino Bluetooth ↔ TCP 중계 프로그램.
-- `pi/controller`: COUNT 시험 중계·영상 관측 수신용 C 클라이언트. 게임 판정은 아직 미구현.
+- `pi/controller`: Pi C 게임 제어기. --game에서 참가자 고정·180초·결과·DB 저널·LCD 전송.
 - `tools/tcp_client`: Pi·Jetson 공용 TCP 진단 소스. [STM 연결 시험](tools/tcp_client/README.md).
 - `jetson/tcp_client`: 공용 소스를 Jetson에서 빌드하는 위치.
 - `arduino/bluetooth_uart_test`: Bluetooth 진단용 스케치. LCD·타이머·자동 응답은 아직 미구현.
@@ -42,7 +43,23 @@ make -C pi/controller
 make -C pi/bluetooth
 ```
 
-## COUNT 통신 테스트
+## 실제 경기 실행 (2026-10-08)
+
+Pi 서버와 Bluetooth 중계는 기존처럼 켜고, PI 클라이언트는 다음 하나만 실행합니다.
+
+```bash
+./pi/controller/iot_client 127.0.0.1 5000 PI --game --duration 180
+```
+
+백그라운드 실행은 `python3 tools/start_pi_game.py`입니다.
+Jetson 웹과 연결기는 등록된 서비스로 자동 실행합니다.
+복귀 완료 HOME → 사람이 구역 안에 들어오기 → STM START 순서입니다.
+0명일 때는 시작하지 않습니다. 시간 만료 시 남은 참가자는 모두 탈락합니다.
+기존 `--cycle-test`는 한 회차 진단용입니다. 같은 PI ID로 둘을 동시에 실행하면
+기존 연결이 교체되므로 새 게임 테스트에는 --game을 사용하세요.
+자세한 검증·DB·LCD 팀원 전달은 [현재 게임 실행](docs/game-runtime.md)을 따릅니다.
+
+## COUNT 통신 테스트 (게임과 별도 진단)
 
 Pi에서 `pi/server` 폴더의 `./iot_server 5000`을 실행합니다.
 로그인 설정은 `idpasswd.example.txt`를 참고하여 실제 `idpasswd.txt`로 준비합니다.
@@ -64,7 +81,8 @@ RUN/STOP/RESET은 보내지 않습니다.
 
 ## 현재 제한
 
-현재 PI 제어의 COUNT 처리는 통신 시험용이며 게임 상태 판단은 구현 전입니다.
+기본 COUNT 중계 모드는 통신 진단용이고 --game이 실제 참가자/게임 상태를 관리합니다.
+오디오와 MCU TIME 펌웨어 반영·180초 현장 시험은 남아 있습니다.
 서버는 인증 후 LF 단위로 메시지를 누적하고 여러 줄·초과 길이를 처리합니다.
-로그인 프레임의 분할 수신, 부분 송신, 장애 복구는 후속 개선 대상입니다.
+서버 로그인 분할 수신·부분 송신·동일 ID 재접속 처리는 보완했습니다. 무선 단절의 현장 검증은 별도입니다.
 MCU는 로그인 알림과 명령을 구분해야 합니다.
