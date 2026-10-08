@@ -1,0 +1,14 @@
+# Generated STM32CubeIDE build output; keep project settings and source.
+/Debug/
+/Release/
+/build/
+/.metadata/
+*.o
+*.d
+*.elf
+*.hex
+*.bin
+*.map
+*.list
+*.su
+*.cyclo

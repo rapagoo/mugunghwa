@@ -28,6 +28,8 @@ Pi의 기존 `game` 코드와 Jetson의 TCP·영상 예제를 기준으로 시�
 - `jetson/tcp_client`: 공용 소스를 Jetson에서 빌드하는 위치.
 - `arduino/bluetooth_uart_test`: Bluetooth 진단용 스케치. LCD·타이머·자동 응답은 아직 미구현.
 - `stm32`: STM32 펌웨어 추가 위치.
+- `stm32/game_controller`: 팀원 STM32CubeIDE 완성 프로젝트를 넣는 폴더. [복사 안내](stm32/game_controller/README.md).
+- `arduino/game_controller`: 팀원 Arduino 완성 스케치를 넣는 폴더. [복사 안내](arduino/game_controller/README.md).
 - `jetson/examples`: 기존 TCP·YOLO 인원 검출 예제. 게임 통합은 아직 미구현.
 - `jetson/vision_client.py`: YOLO·ByteTrack 웹캠 관측을 PI로 전송하는 Python 클라이언트.
 - `jetson/game`: 공통 웹캠·영상 입력, 영역 설정 브라우저 화면, 설정 검증 모듈.
