@@ -1,21 +1,64 @@
-# Arduino 팀원 완성본
+# Arduino Game Status Display Firmware
 
-팀원이 완성한 Arduino 스케치와 함께 필요한 소스·헤더를 이 폴더에 복사하세요.
-Arduino IDE의 폴더 이름 규칙에 맞춰 **메인 스케치 파일 이름은 `game_controller.ino`**로 둡니다.
-여러 `.ino` 탭을 사용하는 경우 메인 파일 외의 탭도 함께 넣으세요.
+라즈베리 파이(서버)로부터 블루투스(HC-06) 통신을 통해 게임 진행 현황(남은 시간, 참가자 수, 통과/탈락 카운트)을 수신하여 16x2 I2C LCD에 실시간 표시하고 ACK 응답을 전송하는 펌웨어입니다.
 
-```text
-game_controller/
-  game_controller.ino
-  기타 소스·헤더 파일
-  README.md
-```
+---
 
-Arduino IDE에서 `game_controller.ino`를 열고 필요한 라이브러리를 설치한 뒤
-보드·포트를 선택하여 업로드합니다. 파일 복사만으로 보드에 업로드되지는 않습니다.
-사용한 보드, 라이브러리 버전, LCD 주소, Bluetooth UART 핀·속도도 이 문서에 기록하세요.
-이 안내는 현재 완성본 코드가 들어 있다는 의미가 아닙니다.
+## 1. 하드웨어 사양 및 부품 구성
 
-기존 `../game_lcd_client/`는 이전 LCD 연결 시험 코드로 보존합니다.
-팀원 최종 코드는 이 폴더를 기준으로 관리합니다.
-현재 게임 통신 규약은 [경기 실행 문서](../../docs/game-runtime.md)를 참고하세요.
+* **MCU 보드:** Arduino Uno / Nano (ATmega328P)
+* **디스플레이:** 16x2 Character LCD (I2C 모듈 일체형, 기본 주소 `0x27`)
+* **블루투스 모듈:** HC-06 (Slave, UART 통신)
+* **보안 안내:** 본 기기는 Wi-Fi 모듈을 사용하지 않으며, 블루투스 SPP를 사용하므로 별도의 Wi-Fi 비밀번호 설정이 없습니다.
+
+---
+
+## 2. 핀 매핑 (Pin Configuration) & 통신 속도
+
+### [1] Bluetooth (HC-06) 연결
+* **HC-06 TX** -> Arduino **D2 (SoftwareSerial RX)**
+* **HC-06 RX** -> Arduino **D3 (SoftwareSerial TX)**
+* **Baud Rate:** `9600 bps`
+
+### [2] I2C 16x2 LCD 연결
+* **SDA** -> Arduino **A4**
+* **SCL** -> Arduino **A5**
+* **VCC** -> **5V**, **GND** -> **GND**
+* **I2C Address:** `0x27`
+
+### [3] 디버깅 시리얼 (PC 연결)
+* **Baud Rate:** `9600 bps` (아두이노 시리얼 모니터 확인용)
+
+---
+
+## 3. 필수 라이브러리
+
+Arduino IDE의 **툴 > 라이브러리 관리자**에서 아래 라이브러리를 검색하여 설치합니다.
+
+* **LiquidCrystal_I2C** (by Frank de Brabander 또는 Marco Schwartz)
+* `Wire` (아두이노 기본 내장)
+* `SoftwareSerial` (아두이노 기본 내장)
+
+---
+
+## 4. 통신 프로토콜 요약
+
+### 수신 명령 (라즈베리 파이 -> 아두이노)
+* `[PI]COUNT@전체@통과@탈락\n` : 인원수 갱신 후 화면 출력
+* `[PI]TIME@남은초\n` : 남은 시간 갱신 후 화면 출력 (`MM:SS`)
+* `[PI]RESET\n` : 대기 화면 (`GAME WAITING / READY!`)으로 초기화
+* `[PI]STOP\n` : 현재 화면 유지
+
+### 송신 응답 (아두이노 -> 라즈베리 파이)
+* `[PI]APPLIED@COUNT@전체@통과@탈락\n` (카운트 적용 확인 ACK)
+* `[PI]APPLIED@TIME@남은초\n` (시간 적용 확인 ACK)
+
+---
+
+## 5. 빌드 및 업로드 방법
+
+1. Arduino IDE를 실행하고 `arduino/game_controller/game_controller.ino` 파일을 엽니다.
+2. **툴 > 보드**에서 `Arduino Uno` (또는 사용하는 보드)를 선택합니다.
+3. **툴 > 포트**에서 연결된 COM 포트를 선택합니다.
+4. **업로드(Ctrl + U)** 버튼을 눌러 컴파일 및 펌웨어 다운로드를 진행합니다.
+5. 업로드 완료 후 시리얼 모니터(`9600 bps`)를 열어 `[SYSTEM] LCD client ready` 로그가 출력되는지 확인합니다.
