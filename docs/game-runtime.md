@@ -138,3 +138,8 @@ START/FRONT나 실제 경기 DB는 생성하지 않는다. 종료 후 `python3 t
 
 화면을 보며 확인하려면 `python3 tools/lcd_terminal_test.py --step-seconds 2`로 각 값을 2초 유지할 수 있다.
 STM 리셋 후 이 조건으로 재시험했고 STM·ARD 모두 다시 7/7 ACK를 확인했다.
+
+시간만 확인하려면 `python3 tools/lcd_terminal_test.py --time-only --step-seconds 4`를 사용한다.
+180/179/178/175/60/10/5/0초를 각각 4초 유지하며 보내고 COUNT는 바꾸지 않는다.
+2026-10-08 양 보드 8/8 TIME ACK 및 사용자가 새 TIME 수신 때만 화면이 바뀜을 확인했다.
+실제 경기에서는 Pi가 매초 TIME을 보내므로 그때만 매초 표시가 줄어든다.
