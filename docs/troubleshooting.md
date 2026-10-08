@@ -811,3 +811,19 @@ Jetson MOVE→STOP→MOVE 추론 적용 확인을 거쳐 Pi CYCLE DONE 도달.
   read 오류 시 누적값 접근/부분 write 처리가 부족하다. 이번 짧은 COUNT/TIME에서 이 문제가 발생한
   증거는 없으며 헤더 불일치와 구분한다. 별도 중계 보완은 미실행이다.
 - 다음 검증: Arduino 수신 헤더·자체 타이머 수정 후 재업로드하고 동일 LCD-only 시험을 반복한다.
+
+#### TS-LCD-001 · Arduino 전체 수정본 준비 (2026-10-08)
+
+- 사용자 요청으로 [game_lcd_client.ino](../arduino/game_lcd_client/game_lcd_client.ino)를 별도 작성했다.
+  수신은 PI 헤더, ACK 목적지도 PI. 자체 300초/카운트다운/절전 루프를 제거하고 TIME만 표시한다.
+  TIME으로 화면을 준비할 때 기존 COUNT를 지우지 않으며, COUNT/TIME이 START 없이 적용된다.
+  필드 범위/총합을 검사하고 초과 길이·NUL 패킷은 다음 개행까지 버린다.
+- UART 핀은 첨부와 같은 D2(RX)/D3(TX), 9600을 유지했다. 과거 성공용 저장소 진단 스케치는
+  D10(RX)/D11(TX)였음을 추가 발견했다. 실제 배선을 사용자에게 질문했으며 확인 전에는
+  핀 불일치를 실제 장애 원인으로 단정하지 않는다. 필요하면 SoftwareSerial 생성자의 핀을 바꾼다.
+- 모의 검증: Pi g++ C++11 -Wall -Wextra -Werror와 Arduino/LCD/UART 가짜 인터페이스에서
+  PI 수신·정확한 ACK·LCD16칸·TIME 단독 표시·COUNT 보존·CRLF/분할/묶음·잘못된 입력/초과 길이 복구 통과.
+  검사 처음 실패는 기대 LCD 문자열에 불필요한 공백 1개를 넣은 모의 검사 오류로 수정했다.
+- 이 결과는 AVR Arduino 코어/실제 라이브러리 빌드나 실물 업로드 성공이 아니다.
+  로컬 arduino-cli가 없어 실제 Arduino 빌드는 미실행. 팀원이 IDE로 업로드 후 터미널 재시험 필요.
+  모의 검사 산출물은 Pi `.runtime/arduino-lcd-check`에 두고 Git에서는 제외했다.
