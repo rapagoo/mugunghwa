@@ -1,6 +1,6 @@
 /* Explicit opt-in, single-cycle trial. Included after socket helpers. */
 enum { C_IDLE, C_MOVE, C_FRONT, C_STOP, C_HOLD, C_REAR, C_RESUME, C_DONE, C_ERROR,
-       C_RECOVER, C_RECOVERY_WAIT, C_HOME };
+       C_RECOVER, C_RECOVERY_WAIT, C_HOME, C_PLAY_MOVE };
 static int cycle_enabled, cycle_state;
 static double cycle_hold = 5, cycle_timeout = 10, cycle_deadline, cycle_hold_until;
 static double cycle_ready;
@@ -12,12 +12,14 @@ static double cycle_reported;
 static double cycle_idle_sent;
 static int cycle_home_required = 1, cycle_rear_confirmed, cycle_idle_confirmed;
 static void cycle_recover(int sock);
+static void cycle_report(int sock, double now);
+#include "game_state.h"
 
 static void cycle_report(int sock, double now)
 {
     static const char *states[] = {"IDLE", "MOVE_PREP", "FRONT_WAIT", "STOP_APPLY",
         "HOLD", "REAR_WAIT", "MOVE_APPLY", "DONE", "ERROR",
-        "RECOVER", "RECOVERY_WAIT", "HOME"};
+        "RECOVER", "RECOVERY_WAIT", "HOME", "PLAY_MOVE"};
     int remaining = 0;
     if(cycle_state == C_HOLD || cycle_state == C_STOP)
         remaining = (int)((cycle_hold_until-now)*1000);
@@ -44,6 +46,7 @@ static void cycle_phase(int sock, const char *phase, int next)
 
 static void cycle_abort(int sock, const char *reason)
 {
+    if(game_enabled) { game_finish(sock, !strcmp(reason,"STM stop") || !strcmp(reason,"operator stop") ? "operator_stop" : "communication_error",0); game_joining=0; }
     cycle_error = !strcmp(reason,"STM stop") ? "STM_STOP" :
         !strcmp(reason,"operator stop") ? "OPERATOR_STOP" :
         !strcmp(reason,"completion timeout") ? "ACK_TIMEOUT" :
@@ -66,6 +69,7 @@ static void cycle_start(int sock)
     if(!cycle_ready || monotonic_seconds()-cycle_ready > 3) {
         puts("CYCLE NOT_READY Jetson fresh inference required"); return;
     }
+    if(game_begin(sock)) return;
     printf("CYCLE START hold=%.2fs timeout=%.2fs\n", cycle_hold, cycle_timeout);
     cycle_error = "NONE";
     cycle_phase(sock, "MOVE", C_MOVE);
@@ -105,6 +109,7 @@ static void cycle_home(int sock)
 static int cycle_line(int sock, const char *sender, const char *payload)
 {
     if(!cycle_enabled) return 0;
+    if(game_line(sock,sender,payload)) return 1;
     if(!strcmp(sender, "JETSON") && !strcmp(payload, "TRIAL@READY")) {
         cycle_ready = monotonic_seconds();
         /* Startup IDLE may precede the bridge login. Retry it without extending motor timeout. */
@@ -118,7 +123,7 @@ static int cycle_line(int sock, const char *sender, const char *payload)
     }
     if(!strcmp(sender, "JETSON") && !strcmp(payload, "TRIAL@ERROR")) {
         cycle_ready = 0;
-        if(cycle_state >= C_MOVE && cycle_state <= C_RESUME) cycle_abort(sock, "Jetson unavailable");
+        if((cycle_state >= C_MOVE && cycle_state <= C_RESUME) || cycle_state==C_PLAY_MOVE) cycle_abort(sock, "Jetson unavailable");
         return 1;
     }
     if(!strcmp(sender, "STM") && !strcmp(payload, "START")) { cycle_start(sock); return 1; }
@@ -127,14 +132,16 @@ static int cycle_line(int sock, const char *sender, const char *payload)
         if(cycle_state == C_RECOVER || cycle_state == C_RECOVERY_WAIT) {
             cycle_idle_confirmed = 1; cycle_home(sock); return 1;
         }
-        if(cycle_state == C_MOVE) cycle_motor(sock, "FRONT", C_FRONT);
-        else if(cycle_state == C_STOP) { cycle_state = C_HOLD; puts("CYCLE STOP confirmed by Jetson"); cycle_report(sock,monotonic_seconds()); }
+        if(cycle_state == C_MOVE) { if(game_active) game_move(sock); else cycle_motor(sock, "FRONT", C_FRONT); }
+        else if(cycle_state == C_STOP) { cycle_state = C_HOLD; if(game_active) { game_phase="stop"; game_save("stop",0); } puts("CYCLE STOP confirmed by Jetson"); cycle_report(sock,monotonic_seconds()); }
+        else if(cycle_state == C_RESUME && game_active) game_move(sock);
         else if(cycle_state == C_RESUME) { cycle_state = C_DONE; puts("CYCLE DONE movement allowed; one cycle complete"); cycle_report(sock,monotonic_seconds()); }
         return 1;
     }
     if(!strcmp(sender, "STM") && !strcmp(payload, "MOTOR@FRONT@OK") && cycle_state == C_FRONT) {
         cycle_motor_state = "FRONT_OK";
-        cycle_hold_until = monotonic_seconds() + cycle_hold;
+        double hold=game_active ? game_hold_min+(game_hold_max-game_hold_min)*(rand()/(double)RAND_MAX) : cycle_hold;
+        cycle_hold_until = monotonic_seconds() + hold;
         cycle_phase(sock, "STOP", C_STOP); return 1;
     }
     if(!strcmp(sender, "STM") && !strcmp(payload, "MOTOR@REAR@OK") && cycle_state == C_REAR) {
@@ -165,6 +172,8 @@ static void cycle_tick(int sock)
     if(cycle_state == C_RECOVERY_WAIT && now >= cycle_deadline) {
         cycle_recover(sock); return;
     }
+    game_tick(sock,now);
+    if(cycle_state==C_PLAY_MOVE) { if(now-cycle_ready>3) cycle_abort(sock,"Jetson heartbeat lost"); return; }
     if(cycle_state < C_MOVE || cycle_state > C_RESUME) return;
     if(now-cycle_ready > 3) { cycle_abort(sock, "Jetson heartbeat lost"); return; }
     if(cycle_state == C_HOLD) {

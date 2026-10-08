@@ -1,5 +1,6 @@
 """Read-only MariaDB adapter. Credentials live outside Git; no schema writes."""
 import json
+from datetime import datetime, timezone
 from pathlib import Path
 
 
@@ -28,6 +29,14 @@ class MariaGameDatabase:
                     game = cursor.fetchone()
                     cursor.execute('SELECT * FROM device_status ORDER BY id')
                     devices = cursor.fetchall()
+                    now=datetime.now(timezone.utc)
+                    for device in devices:
+                        seen=device.get('last_seen_at')
+                        try: age=(now-datetime.fromisoformat(seen.replace('Z','+00:00'))).total_seconds() if seen else None
+                        except (ValueError,TypeError): age=None
+                        device['age_seconds']=age
+                        # Historical receipt is not proof that a silent board is connected now.
+                        if age is None or age>10: device['connection_state']='unknown'
                     players, events = [], []
                     if game:
                         cursor.execute('SELECT * FROM participants WHERE game_id=%s ORDER BY id',(game['id'],))

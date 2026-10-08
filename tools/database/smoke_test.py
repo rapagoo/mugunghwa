@@ -31,7 +31,7 @@ def main():
             now=datetime.now(timezone.utc).isoformat(timespec='seconds').replace('+00:00','Z')
             cursor.execute('INSERT INTO games (id,phase,started_at,remaining_seconds,updated_at,authority,is_test) VALUES (%s,%s,%s,%s,%s,%s,TRUE)',(game_id,'running',now,42,now,'PI'))
             for participant,status in [('TEST-A','passed'),('TEST-B','failed')]:
-                cursor.execute('INSERT INTO participants VALUES (%s,%s,%s,%s,%s)',(game_id,participant,'시험 참가자 '+participant,status,now))
+                cursor.execute('INSERT INTO participants (game_id,id,name,status,updated_at) VALUES (%s,%s,%s,%s,%s)',(game_id,participant,'시험 참가자 '+participant,status,now))
                 cursor.execute('INSERT INTO events (game_id,event_key,kind,participant_id,occurred_at) VALUES (%s,%s,%s,%s,%s)',(game_id,game_id+'-'+participant,status,participant,now))
             cursor.execute('SELECT COUNT(*) FROM participants WHERE game_id=%s',(game_id,))
             assert cursor.fetchone()[0]==2

@@ -7,6 +7,7 @@ import signal
 import socket
 import time
 from urllib.request import Request, urlopen
+from game.game_bridge import enroll, observations
 
 
 def web_json(web, path, body=None):
@@ -62,6 +63,9 @@ def session(host, port, web):
         next_health = 0
         cached = {}
         last_health = None
+        game = None
+        phase_token = None
+        next_observation = 0
         def send(payload):
             conn.sendall(('[PI]'+payload+'\n').encode())
         while True:
@@ -94,6 +98,17 @@ def session(host, port, web):
                     except Exception: pass
                     expected = None
                 next_health = time.monotonic()+1
+            if game and now >= next_observation:
+                try:
+                    state = web_json(web,"/api/vision")
+                    if not fresh(state) or state.get("epoch")!=game[1] or state.get("calibration_revision")!=game[2]:
+                        send("GAME_ERROR"); game=None
+                    elif expected and phase_token:
+                        for tid, verdict in observations(state,expected):
+                            send("OBS@{}@{}@{}@{}@{}@{}".format(game[0],phase_token,tid,verdict,game[1],game[2]))
+                except Exception:
+                    send("GAME_ERROR"); game=None
+                next_observation=time.monotonic()+.2
             if not select.select([conn],[],[],.1)[0]:
                 continue
             chunk = conn.recv(256)
@@ -116,6 +131,24 @@ def session(host, port, web):
                     except Exception as error:
                         print('CYCLE_REPORT_ERROR '+str(error),flush=True)
                     continue
+                join = re.fullmatch(r'\[PI\]JOIN@([0-9a-f]{8})',text)
+                if join:
+                    token=join.group(1)
+                    try:
+                        state=web_json(web,'/api/vision')
+                        if not fresh(state): raise RuntimeError('Stale inference')
+                        ids=enroll(state)
+                        send('JOIN_BEGIN@{}@{}@{}@{}'.format(token,len(ids),state['epoch'],state['calibration_revision']))
+                        for tid in ids: send('JOIN_PERSON@{}@{}'.format(token,tid))
+                        send('JOIN_END@'+token)
+                    except Exception:
+                        send('JOIN_BEGIN@{}@0@0@0'.format(token))
+                    continue
+                active = re.fullmatch(r'\[PI\]GAME@([0-9a-f]{32})@(\d+)@(\d+)',text)
+                if active:
+                    game=(active[1],int(active[2]),int(active[3])); continue
+                if text == '[PI]GAME@END':
+                    game=None; continue
                 if text == '[PI]STOP':
                     expected = apply_phase(web,'IDLE'); continue
                 match = re.fullmatch(r'\[PI\]PHASE@(MOVE|STOP|IDLE)@([0-9a-f]{8})',text)
@@ -128,6 +161,7 @@ def session(host, port, web):
                     continue
                 try:
                     expected = apply_phase(web,phase)
+                    phase_token = token
                     cached[token] = ack
                     if len(cached)>64: del cached[next(iter(cached))]
                     send(ack); print('APPLIED '+ack,flush=True)

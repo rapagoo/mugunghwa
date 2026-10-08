@@ -1,5 +1,5 @@
 /* PI controller: Jetson observations -> PI, COUNT -> MCU, APPLIED -> Jetson.
- * Test controller only; game state decisions are not implemented yet. */
+ * --game freezes participants and owns time, results, LCD and a durable DB journal. */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -10,6 +10,7 @@
 #include <sys/socket.h>
 #include <sys/time.h>
 #include <sys/select.h>
+#include <signal.h>
 
 #define LINE_SIZE 101
 #define PENDING_SIZE 32
@@ -23,10 +24,12 @@ typedef struct {
 static const char *targets[] = {"ARD", "STM"};
 static PENDING pending[PENDING_SIZE];
 static unsigned long order;
+static void game_exit_record(void);
 
 static void fail(const char *message)
 {
     fprintf(stderr, "%s\n", message);
+    game_exit_record();
     exit(EXIT_FAILURE);
 }
 
@@ -130,6 +133,7 @@ static void handle_line(int sock, char *line, int target_mask)
     if(line[0] != '[' || !closing) { puts("IGNORE malformed message"); return; }
     *closing = '\0';
     const char *sender = line + 1, *payload = closing + 1;
+    game_device_seen(sender,payload);
     if(cycle_line(sock, sender, payload)) return;
     int counts[3];
     double now = monotonic_seconds();
@@ -175,17 +179,22 @@ int main(int argc, char *argv[])
         fail("Usage: iot_client <IP> <port> PI [--target BOTH|ARD|STM] [--cycle-test] [--hold-seconds 5] [--ack-timeout 10]");
     if(strcmp(argv[3], "PI")) fail("Pi controller must log in as PI");
     for(int i=4; i<argc; i++) {
+        if(!strcmp(argv[i], "--game")) { game_enabled=cycle_enabled=1; continue; }
+        if(!strcmp(argv[i], "--no-db-writer")) { game_no_writer=1; continue; }
         if(!strcmp(argv[i], "--cycle-test")) { cycle_enabled = 1; continue; }
         if(i+1 >= argc) fail("Missing option value");
         const char *option = argv[i], *value = argv[++i];
-        if(!strcmp(option, "--target")) {
+        if(!strcmp(option,"--journal")) { if(strlen(value)>=sizeof(game_journal)) fail("Journal path too long"); strcpy(game_journal,value); }
+        else if(!strcmp(option,"--duration")) { char *tail; long n=strtol(value,&tail,10); if(!*value || *tail || n<1 || n>3600) fail("Duration must be 1..3600"); game_duration=(int)n; }
+        else if(!strcmp(option,"--move-seconds")) { char *tail; double n=strtod(value,&tail); if(!*value || *tail || !isfinite(n) || n<.2 || n>120) fail("Move duration invalid"); game_move_seconds=n; }
+        else if(!strcmp(option, "--target")) {
             if(!strcmp(value, "ARD")) target_mask = 1;
             else if(!strcmp(value, "STM")) target_mask = 2;
             else if(strcmp(value, "BOTH")) fail("Target must be BOTH, ARD or STM");
         } else if(!strcmp(option,"--hold-seconds") || !strcmp(option,"--ack-timeout")) {
             char *tail; double n = strtod(value, &tail);
             if(!*value || *tail || !(n >= .2 && n <= 120)) fail("Duration must be 0.2..120 seconds");
-            if(!strcmp(option,"--hold-seconds")) cycle_hold=n; else cycle_timeout=n;
+            if(!strcmp(option,"--hold-seconds")) { cycle_hold=n; game_hold_min=game_hold_max=n; } else cycle_timeout=n;
         } else fail("Unknown option");
     }
     char *end;
@@ -223,13 +232,16 @@ int main(int argc, char *argv[])
     int input_active = cycle_enabled;
     size_t input_used = 0;
     char input_line[32];
+    game_targets=target_mask;
+    if(game_enabled) game_setup(sock);
     cycle_request = (unsigned int)time(NULL) ^ (unsigned int)getpid();
     if(cycle_enabled) {
-        puts("CYCLE READY: STM START or type start; stop returns rear; no audio/results");
+        puts(game_enabled ? "GAME READY: START freezes ROI players; 180s default; stop returns rear" : "CYCLE READY: STM START or type start; stop returns rear; no audio/results");
         cycle_recover(sock);
     }
     fflush(stdout);
     while(1) {
+        if(game_shutdown) { game_finish(sock,"operator_stop",0); close(sock); return 0; }
         if(cycle_enabled) {
             fd_set readers; FD_ZERO(&readers); FD_SET(sock,&readers);
             if(input_active) FD_SET(STDIN_FILENO,&readers);

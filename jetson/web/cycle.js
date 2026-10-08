@@ -1,6 +1,6 @@
 (() => {
   const el = id => document.getElementById(id);
-  const stages = {IDLE:'시작 버튼 대기',MOVE_PREP:'Jetson 이동 허용 적용 대기',
+  const stages = {PLAY_MOVE:'이동 허용 · 다음 회차 대기',IDLE:'시작 버튼 대기',MOVE_PREP:'Jetson 이동 허용 적용 대기',
     FRONT_WAIT:'인형 앞보기 명령 전송 · 완료 대기',STOP_APPLY:'앞보기 완료 · Jetson 정지 판정 적용 대기',
     HOLD:'정지 판정 중',REAR_WAIT:'인형 뒤보기 명령 전송 · 완료 대기',
     MOVE_APPLY:'뒤보기 완료 · Jetson 이동 허용 적용 대기',DONE:'한 회차 완료',ERROR:'시험 중단',
@@ -31,7 +31,7 @@
         '정지 유지 남은 시간 '+(cycle.remaining_ms/1000).toFixed(1)+'초' : '정지 유지 시간 —';
       el('cycle-warning').textContent = !healthy ? '새 상태가 확인될 때까지 시험을 멈추세요. 이전 방향·단계일 수 있습니다.' :
         cycle.error!=='NONE' ? errors[cycle.error] :
-        'STM 시작 버튼으로 한 회차를 시작하세요. 자동 시험 중에는 아래 수동 단계 버튼을 누르지 마세요.';
+        'STM 시작 버튼으로 경기를 시작하세요. 게임 중에는 구역과 수동 시험 단계를 바꾸지 마세요.';
     } catch(error) {
       el('cycle-signal').textContent='서버 연결 확인 · 판정 상태 불명';
       el('cycle-signal').dataset.phase='idle';

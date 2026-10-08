@@ -97,3 +97,13 @@ Pi C 클라이언트의 저장 모듈/큐, 이벤트 중복 방지 키, 명령 �
 참고: [MariaDB 원격 연결](https://mariadb.com/docs/server/mariadb-quickstart-guides/mariadb-remote-connection-guide),
 [계정 권한](https://mariadb.com/docs/server/reference/sql-statements/account-management-sql-statements/grant),
 [트랜잭션](https://mariadb.com/docs/server/reference/sql-statements/transactions/start-transaction).
+
+## 2026-10-08 게임 연결
+
+사용자가 `sudo bash tools/database/upgrade_game.sh`를 실행했다.
+002 스키마(경기 버전·제한 시간·종료 사유·추적 ID)와 reader 호스트 .130 변경을 반영했다.
+Jetson SELECT 성공/UPDATE 거부를 확인했다. 비밀번호와 기존 데이터는 보존한다.
+이전 날짜의 .120 계정 기록은 당시 설정이며 현재 접속 허용은 .130이다.
+Pi `--game`의 로컬 저널 → `pi/game_db_writer.py` → MariaDB → 웹 조회 흐름과
+재시도·버전·현장 확인은 [게임 실행 문서](game-runtime.md)를 따른다.
+`tests/game_database.py`에서 합성 2명 저장·중복/이전 버전 방지 후 rollback을 검증했다.

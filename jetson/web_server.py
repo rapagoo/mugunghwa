@@ -112,9 +112,13 @@ def run_vision(args, monitor, stop, calibration, recorder):
             keypoints = pose_keypoints(result,boxes)
             height, width = frame.shape[:2]
             observed = time.monotonic()
+            trial_command = monitor.get_trial()
             diagnostics = validation.update(boxes,ids,confidence,width,height,media,finish,
                 None if previous is None else (observed-previous)*1000)
-            trial_command = monitor.get_trial()
+            if finish:
+                for candidate in finish.completed.values():
+                    if "phase_version" not in candidate:
+                        candidate.update(phase=trial_command["phase"],phase_version=trial_command["version"])
             motion_result = motion.update(boxes,ids,diagnostics['observations'],width,height,
                                           source_wall,trial_command)
             pose_result = pose_motion.update(boxes,ids,diagnostics['observations'],keypoints,

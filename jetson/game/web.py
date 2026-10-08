@@ -34,7 +34,7 @@ class Monitor:
                 self.cycle_health, self.cycle_reason = body['health'], body['reason']
                 self.cycle_health_at = time.monotonic()
             elif set(body) == {'token','stage','motor','remaining_ms','error'}:
-                if (body['stage'] not in ('IDLE','MOVE_PREP','FRONT_WAIT','STOP_APPLY','HOLD','REAR_WAIT','MOVE_APPLY','DONE','ERROR','RECOVER','RECOVERY_WAIT','HOME')
+                if (body['stage'] not in ('IDLE','MOVE_PREP','FRONT_WAIT','STOP_APPLY','HOLD','REAR_WAIT','MOVE_APPLY','DONE','ERROR','RECOVER','RECOVERY_WAIT','HOME','PLAY_MOVE')
                     or body['motor'] not in ('UNKNOWN','FRONT_WAIT','FRONT_OK','REAR_WAIT','REAR_OK')
                     or body['error'] not in ('NONE','STM_STOP','OPERATOR_STOP','ACK_TIMEOUT','HEARTBEAT_LOST','JETSON_ERROR','RECOVERY_TIMEOUT')
                     or not isinstance(body['token'],str) or len(body['token']) != 8
