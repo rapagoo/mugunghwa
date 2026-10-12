@@ -89,7 +89,17 @@ class WebTests(unittest.TestCase):
                     self.assertEqual(response.readline(),b'\r\n')
                     self.assertEqual(response.read(11),b'cached-jpeg')
                 with urlopen(url+'/') as response:
-                    self.assertIn('무궁화'.encode(),response.read())
+                    page=response.read()
+                    self.assertIn('무궁화'.encode(),page)
+                    self.assertIn(b'data-view="game"',page)
+                    self.assertNotIn(b'phase-move',page)
+                    self.assertNotIn(b'record-start',page)
+                    self.assertNotIn(b'/validation.js',page)
+                with urlopen(url+'/debug') as response:
+                    page=response.read()
+                    self.assertIn(b'data-view="debug"',page)
+                    self.assertIn(b'phase-move',page)
+                    self.assertIn(b'record-start',page)
             finally:
                 monitor.close()
                 server.shutdown()

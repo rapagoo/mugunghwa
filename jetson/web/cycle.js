@@ -1,5 +1,7 @@
 (() => {
   const el = id => document.getElementById(id);
+  const gameView=document.body.dataset.view==='game';
+  const put=(id,value)=>{if(el(id))el(id).textContent=value;};
   const stages = {PLAY_MOVE:'이동 허용 · 다음 회차 대기',IDLE:'시작 버튼 대기',MOVE_PREP:'Jetson 이동 허용 적용 대기',
     FRONT_WAIT:'인형 앞보기 명령 전송 · 완료 대기',STOP_APPLY:'앞보기 완료 · Jetson 정지 판정 적용 대기',
     HOLD:'정지 판정 중',REAR_WAIT:'인형 뒤보기 명령 전송 · 완료 대기',
@@ -24,20 +26,22 @@
         phase==='stop' ? '정지 판정 중 · 움직이지 마세요' :
         phase==='move' ? '움직임 허용' : '판정 대기';
       el('cycle-signal').dataset.phase = phase;
-      el('cycle-link').textContent = healthy ? 'Pi ↔ Jetson 연결 정상' : '상태 수신 대기/지연';
-      el('cycle-stage').textContent = 'Pi: '+(cycle ? stages[cycle.stage] : '시험 상태 미수신');
-      el('cycle-motor').textContent = 'STM: '+(cycle ? motors[cycle.motor] : '완료 응답 미수신');
-      el('cycle-time').textContent = healthy && ['HOLD','STOP_APPLY'].includes(cycle.stage) ?
-        '정지 유지 남은 시간 '+(cycle.remaining_ms/1000).toFixed(1)+'초' : '정지 유지 시간 —';
-      el('cycle-warning').textContent = !healthy ? '새 상태가 확인될 때까지 시험을 멈추세요. 이전 방향·단계일 수 있습니다.' :
+      el('cycle-link').textContent = healthy ? '연결 정상' : '연결 확인 필요';
+      const brief={HOME:'구역 안에 선 뒤 시작 버튼을 눌러주세요.',FRONT_WAIT:'인형이 앞으로 돌아갑니다. 회전 완료를 기다려주세요.',STOP_APPLY:'정지 판정을 준비하고 있습니다.',REAR_WAIT:'인형이 뒤로 돌아갑니다.',MOVE_APPLY:'이동을 준비하고 있습니다.',MOVE_PREP:'경기를 준비하고 있습니다.',RECOVER:'인형의 뒤보기 복귀를 기다리고 있습니다.',RECOVERY_WAIT:'인형 연결을 확인해 주세요.'};
+      put('cycle-stage',gameView?(healthy?(brief[cycle.stage]||''):'상태가 갱신될 때까지 기다려주세요.'):'Pi: '+(cycle ? stages[cycle.stage] : '시험 상태 미수신'));
+      put('cycle-motor','STM: '+(cycle ? motors[cycle.motor] : '완료 응답 미수신'));
+      put('cycle-time',healthy && ['HOLD','STOP_APPLY'].includes(cycle.stage) ?
+        '정지 유지 남은 시간 '+(cycle.remaining_ms/1000).toFixed(1)+'초' : '정지 유지 시간 —');
+      el('cycle-warning').textContent = !healthy ? '연결이 확인될 때까지 경기를 시작하지 마세요.' :
         cycle.error!=='NONE' ? errors[cycle.error] :
-        'STM 시작 버튼으로 경기를 시작하세요. 게임 중에는 구역과 수동 시험 단계를 바꾸지 마세요.';
+        gameView?'':'STM 시작 버튼으로 경기를 시작하세요. 게임 중에는 구역과 수동 시험 단계를 바꾸지 마세요.';
     } catch(error) {
       el('cycle-signal').textContent='서버 연결 확인 · 판정 상태 불명';
       el('cycle-signal').dataset.phase='idle';
       el('cycle-link').textContent='조회 실패';
-      el('cycle-time').textContent='정지 유지 시간 —';
-      el('cycle-warning').textContent='이전 표시값일 수 있습니다. 연결 복구 후 시험하세요.';
+      put('cycle-time','정지 유지 시간 —');
+      put('cycle-stage','');
+      el('cycle-warning').textContent='이전 표시값일 수 있습니다. 연결 복구 후 시작해 주세요.';
     } finally {setTimeout(refresh,500);}
   }
   refresh();

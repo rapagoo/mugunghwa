@@ -2,3 +2,17 @@
 a{color:inherit;text-decoration:none}.controls{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:18px}button{font:inherit;color:#e7efee;background:#20332f;border:1px solid #365449;border-radius:8px;padding:10px 14px;cursor:pointer}button:disabled{opacity:.45;cursor:default}button.selected{outline:2px solid #a7ebc8}#calibration-canvas{display:block;width:100%;height:auto;cursor:crosshair;background:#080e11;border-radius:8px}#calibration-status{color:#a7ebc8;min-height:24px}
 .validation-panel{margin-top:20px}.table-scroll{overflow-x:auto;margin:20px 0}table{border-collapse:collapse;width:100%;font-size:13px}th,td{text-align:left;border-bottom:1px solid #293b41;padding:12px;white-space:nowrap}th{color:#a7ebc8}select,input{background:#0c1418;color:#e7efee;border:1px solid #365449;border-radius:6px;padding:9px;font:inherit}label{font-size:13px}#expected-people{width:80px}#test-note{width:min(500px,80%)}details{margin:18px 0}summary{cursor:pointer;color:#a7ebc8}
 .cycle-panel{margin-bottom:20px}.cycle-signal{font-size:clamp(24px,4vw,44px);font-weight:800;margin:14px 0;color:#d4dadd}.cycle-signal[data-phase="stop"]{color:#ffab99}.cycle-signal[data-phase="move"]{color:#a7ebc8}.cycle-details{display:flex;gap:20px;flex-wrap:wrap}.cycle-details p{margin:4px 0;font-size:16px}
+[hidden]{display:none!important}
+body[data-view="game"] main{max-width:1480px;padding-top:28px}
+body[data-view="game"] .cycle-panel{border-left:4px solid #a7ebc8;padding:20px 26px}
+body[data-view="game"] .cycle-panel:has([data-phase="stop"]){border-left-color:#ffab99}
+body[data-view="game"] .cycle-signal{margin:6px 0;font-size:clamp(26px,3vw,42px)}
+body[data-view="game"] .cycle-panel .panelhead{margin-bottom:8px}
+body[data-view="game"] .note:empty{display:none}
+body[data-view="game"] .game .countdown{font-size:clamp(48px,5vw,76px);letter-spacing:2px;margin-top:18px}
+body[data-view="game"] .game .totals{margin-top:24px;margin-bottom:24px}
+body[data-view="game"] .game h3{font-size:15px;margin:24px 0 8px}
+body[data-view="game"] .row{padding:14px 0}
+.camera-caption{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;font-size:13px;color:#8fa4aa;margin-top:16px}
+.camera-caption b{color:#e7efee}
+@media(max-width:600px){header{padding:18px 4vw}.panel{padding:18px}body[data-view="game"] .cycle-panel{padding:18px}.panelhead{gap:10px;flex-wrap:wrap}}

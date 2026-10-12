@@ -158,8 +158,9 @@ def create_server(host, port, monitor, database, calibration=None, recorder=None
                     self.send((static/'cycle.js').read_bytes(), 'text/javascript; charset=utf-8')
                 elif route == '/api/cycle':
                     self.send(json.dumps(monitor.cycle_snapshot()).encode(), 'application/json')
-                elif route in ('/', '/app.js', '/style.css', '/calibrate', '/calibrate.js', '/validation.js','/recording.js'):
+                elif route in ('/', '/debug', '/app.js', '/style.css', '/calibrate', '/calibrate.js', '/validation.js','/recording.js'):
                     name, mime = {'/': ('index.html','text/html; charset=utf-8'),
+                                  '/debug': ('debug.html','text/html; charset=utf-8'),
                                   '/app.js': ('app.js','text/javascript; charset=utf-8'),
                                   '/style.css': ('style.css','text/css; charset=utf-8'),
                                   '/calibrate': ('calibrate.html','text/html; charset=utf-8'),
