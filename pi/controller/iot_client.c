@@ -40,6 +40,8 @@ static double monotonic_seconds(void)
     return now.tv_sec + now.tv_nsec / 1e9;
 }
 
+ #include "command_status.h"
+
 static void send_all(int sock, const char *message)
 {
     size_t offset = 0, length = strlen(message);
@@ -49,6 +51,7 @@ static void send_all(int sock, const char *message)
         if(n <= 0) fail("send failed");
         offset += (size_t)n;
     }
+    command_sent(message);
 }
 
 /* Accept exactly three decimal fields, each 0..99, with no extra characters. */
@@ -133,6 +136,7 @@ static void handle_line(int sock, char *line, int target_mask)
     if(line[0] != '[' || !closing) { puts("IGNORE malformed message"); return; }
     *closing = '\0';
     const char *sender = line + 1, *payload = closing + 1;
+    command_received(sender,payload);
     game_device_seen(sender,payload);
     if(cycle_line(sock, sender, payload)) return;
     if(game_enabled && (!strcmp(sender,"ARD") || !strcmp(sender,"STM")) && !strncmp(payload,"APPLIED@",8)) {
@@ -263,7 +267,7 @@ int main(int argc, char *argv[])
                     input_used=0;
                 } else if(c!='\r' && input_used < sizeof(input_line)-1) input_line[input_used++]=c;
             }
-            cycle_tick(sock); fflush(stdout);
+            cycle_tick(sock); command_report(sock); fflush(stdout);
             if(!FD_ISSET(sock,&readers)) continue;
         }
         char buffer[256];

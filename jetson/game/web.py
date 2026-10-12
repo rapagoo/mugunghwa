@@ -21,12 +21,30 @@ class Monitor:
         self.reset_generation = 0
         self.trial_command = dict(version=0,phase='idle',requested_at=time.monotonic())
         self.state = dict(source=source, state='preparing', error=None)
+        self.commands = {}
+        self.command_times = {}
         self.connections = None
         self.connections_at = None
         self.cycle = None
         self.cycle_at = self.cycle_health_at = None
         self.cycle_health = False
         self.cycle_reason = 'bridge not connected'
+
+    def set_command(self, body):
+        if (not isinstance(body,dict) or set(body)!={'id','state','kind','ack_time'} or
+                body['id'] not in ('STM','ARD') or body['state'] not in ('NONE','WAIT','DONE','TIMEOUT') or
+                body['kind'] not in ('NONE','COUNT','TIME','MOTOR') or type(body['ack_time']) is not int or
+                not 0 <= body['ack_time'] <= 9999999999):
+            raise ValueError('Invalid command status')
+        with self.condition:
+            self.commands[body['id']]=dict(body)
+            self.command_times[body['id']]=time.monotonic()
+
+    def commands_snapshot(self):
+        with self.condition:
+            now=time.monotonic()
+            return dict(devices=[dict(v,fresh=now-self.command_times[k]<=6)
+                                 for k,v in self.commands.items()])
 
     def set_connections(self, body):
         if (not isinstance(body, dict) or set(body) != {'ids'} or
@@ -178,6 +196,8 @@ def create_server(host, port, monitor, database, calibration=None, recorder=None
             try:
                 if route == '/cycle.js':
                     self.send((static/'cycle.js').read_bytes(), 'text/javascript; charset=utf-8')
+                elif route == '/api/commands':
+                    self.send(json.dumps(monitor.commands_snapshot()).encode(), 'application/json')
                 elif route == '/api/connections':
                     self.send(json.dumps(monitor.connections_snapshot()).encode(), 'application/json')
                 elif route == '/api/cycle':
@@ -235,10 +255,10 @@ def create_server(host, port, monitor, database, calibration=None, recorder=None
                 self.send(b'Database unavailable', 'text/plain', 503)
 
         def do_POST(self):
-            if self.path not in ('/api/connections','/api/cycle','/api/calibration','/api/validation/reset','/api/validation/phase','/api/recording/start','/api/recording/stop') or (self.path == '/api/calibration' and calibration is None):
+            if self.path not in ('/api/commands','/api/connections','/api/cycle','/api/calibration','/api/validation/reset','/api/validation/phase','/api/recording/start','/api/recording/stop') or (self.path == '/api/calibration' and calibration is None):
                 self.send(b'Not found', 'text/plain', 404)
                 return
-            if self.path in ('/api/cycle','/api/connections') and self.client_address[0] not in ('127.0.0.1','::1'):
+            if self.path in ('/api/cycle','/api/connections','/api/commands') and self.client_address[0] not in ('127.0.0.1','::1'):
                 self.close_connection = True
                 self.send(b'Local bridge only', 'text/plain', 403)
                 return
@@ -259,6 +279,10 @@ def create_server(host, port, monitor, database, calibration=None, recorder=None
                     raise ValueError('Invalid request length')
                 self.connection.settimeout(5)
                 body = json.loads(self.rfile.read(length))
+                if self.path == '/api/commands':
+                    monitor.set_command(body)
+                    self.send(b'{}','application/json')
+                    return
                 if self.path == '/api/connections':
                     monitor.set_connections(body)
                     self.send(b'{}','application/json')

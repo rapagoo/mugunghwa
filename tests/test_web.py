@@ -15,6 +15,18 @@ from game.mariadb_store import DatabaseUnavailable
 
 
 class WebTests(unittest.TestCase):
+    def test_command_monitor_stales_without_changing_completed_status(self):
+        monitor=Monitor('camera')
+        with patch('game.web.time.monotonic',return_value=10):
+            monitor.set_command(dict(id='STM',state='DONE',kind='TIME',ack_time=123))
+            self.assertTrue(monitor.commands_snapshot()['devices'][0]['fresh'])
+        with patch('game.web.time.monotonic',return_value=17):
+            device=monitor.commands_snapshot()['devices'][0]
+            self.assertFalse(device['fresh'])
+            self.assertEqual(device['state'],'DONE')
+        with self.assertRaises(ValueError):
+            monitor.set_command(dict(id='STM',state='INVALID',kind='TIME',ack_time=123))
+
     def test_server_connections_expire_without_marking_devices_disconnected(self):
         monitor=Monitor('camera')
         self.assertFalse(monitor.connections_snapshot()['fresh'])

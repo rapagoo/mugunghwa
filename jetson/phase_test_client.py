@@ -142,6 +142,12 @@ def session(host, port, web, audio=None):
                 if len(line) >= 100:
                     raise RuntimeError('Oversized message')
                 text = line.decode('ascii').rstrip('\r')
+                device=re.fullmatch(r'\[PI\]DEVICE@(STM|ARD)@(NONE|WAIT|DONE|TIMEOUT)@(NONE|COUNT|TIME|MOTOR)@(\d{1,10})',text)
+                if device:
+                    board,status,kind,at=device.groups()
+                    try: web_json(web,'/api/commands',dict(id=board,state=status,kind=kind,ack_time=int(at)))
+                    except Exception as error: print('COMMAND_REPORT_ERROR '+str(error),flush=True)
+                    continue
                 if text == '[PI]TRIAL@PING':
                     last_ping = time.monotonic(); continue
                 report = re.fullmatch(r'\[PI\]CYCLE@([0-9a-f]{8})@([A-Z_]+)@([A-Z_]+)@(\d{1,6})@([A-Z_]+)', text)

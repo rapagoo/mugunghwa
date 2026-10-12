@@ -17,17 +17,6 @@ function deviceStatus(id,label,state,detail){
   put('link-'+id,label);put('detail-'+id,detail);
   if(el('link-'+id))el('link-'+id).dataset.state=state;
 }
-function boardStatus(id,devices){
-  const board=devices.find(d=>d.id===id.toUpperCase());
-  const age=board?.age_seconds;
-  const recent=Number.isFinite(age)&&age>=0&&age<=10;
-  let detail='아직 응답 기록이 없습니다.';
-  if(board?.last_seen_at){
-    const date=new Date(board.last_seen_at);
-    detail='최근 응답 '+(Number.isNaN(date.getTime())?'시각 확인 불가':date.toLocaleString('ko-KR',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit',second:'2-digit'}));
-  }
-  deviceStatus(id,recent?'최근 응답 확인':board?.last_seen_at?'최근 응답 오래됨':'응답 기록 없음',recent?'ok':'unknown',detail);
-}
 async function get(path){
   const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),5000);
   try{const response=await fetch(path,{cache:'no-store',signal:controller.signal});if(!response.ok)throw Error(response.status);return await response.json()}
@@ -64,7 +53,7 @@ async function refreshGame(schedule=true){
   try{
     const g=await get('/api/game');gameConnected=g.connected!==false;
     deviceStatus('db',gameConnected?'조회 정상':'연결 확인 필요',gameConnected?'ok':'unknown',gameConnected?'경기 기록 조회 정상':'DB 연결을 확인해 주세요.');
-    for(const id of ['stm','ard'])boardStatus(id,g.devices||[]);
+
     const terminal=g.game&&['finished','aborted'].includes(g.game.phase);
     const cleared=gameView&&terminal&&g.game.id===clearedGameId;
     if(el('reset-game-display'))el('reset-game-display').disabled=!terminal||cleared;
@@ -90,7 +79,7 @@ async function refreshGame(schedule=true){
     rows('participants',g.participants.map((p,i)=>[gameView?'참가자 '+(i+1):(p.name||p.id),g.game?.phase==="aborted"&&p.status==="playing"?"미완료":labels[p.status]||p.status,p.status]),'경기가 시작되면 표시됩니다.');
     rows('devices',(g.devices||[]).map(d=>[d.id,d.connection_state+' · '+(d.last_ack||'—')+' · '+(d.last_seen_at||'수신 기록 없음')]),'아직 보드 상태 수집이 연결되지 않았습니다.');
     rows('events',g.events.map(e=>[`${e.kind}${e.participant_id?' · '+e.participant_id:''}`,e.occurred_at]),'아직 저장된 이벤트가 없습니다.');
-  }catch(error){if(el('reset-game-display'))el('reset-game-display').disabled=true;deviceStatus('db','연결 확인 필요','unknown','경기 기록을 조회할 수 없습니다.');for(const id of ['stm','ard'])deviceStatus(id,'응답 조회 불가','unknown','보드 응답 기록 조회 불가');gameConnected=false;put('game-state','게임 상태 조회 실패');put('game-meta','마지막 표시값일 수 있습니다. 서버 상태를 확인해 주세요.')}
+  }catch(error){if(el('reset-game-display'))el('reset-game-display').disabled=true;deviceStatus('db','연결 확인 필요','unknown','경기 기록을 조회할 수 없습니다.');gameConnected=false;put('game-state','게임 상태 조회 실패');put('game-meta','마지막 표시값일 수 있습니다. 서버 상태를 확인해 주세요.')}
   finally{connection();if(schedule)setTimeout(refreshGame,2000)}
 }
 el('stream').addEventListener('error',()=>{el('stream').dataset.retry='1'});
@@ -122,3 +111,20 @@ if(el('reset-game-display'))el('reset-game-display').addEventListener('click',as
     await refreshGame(false);
   }catch(error){put('reset-game-note','경기 상태를 확인할 수 없습니다. 연결 복구 후 다시 시도해 주세요.');}
 });
+
+async function refreshCommands(){
+  try{
+    const data=await get('/api/commands');
+    for(const id of ['stm','ard']){
+      const d=data.devices.find(v=>v.id===id.toUpperCase());
+      if(!d?.fresh){deviceStatus(id,'상태 수신 대기','unknown','Pi 명령 처리 상태를 기다리고 있습니다.');continue;}
+      const label={NONE:'명령 대기',WAIT:'응답 대기',DONE:'마지막 명령 처리 완료',TIMEOUT:'응답 없음'}[d.state];
+      const at=d.ack_time?new Date(d.ack_time*1000).toLocaleString('ko-KR',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit',second:'2-digit'}):null;
+      const detail=d.state==='NONE'?'아직 보낸 명령이 없습니다.':d.state==='DONE'?'완료 '+at:
+        d.kind+' 명령 · '+(d.state==='TIMEOUT'?'10초 내 완료 응답 없음':'완료 응답을 기다리고 있습니다.');
+      deviceStatus(id,label,d.state==='DONE'?'ok':'unknown',detail);
+    }
+  }catch(error){for(const id of ['stm','ard'])deviceStatus(id,'상태 조회 불가','unknown','명령 처리 상태를 조회할 수 없습니다.');}
+  finally{setTimeout(refreshCommands,1000);}
+}
+if(gameView)refreshCommands();
