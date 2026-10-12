@@ -1,93 +1,90 @@
-# 무궁화게임 개발 코드
+# 무궁화 꽃이 피었습니다
 
-Raspberry Pi와 Jetson의 개인 담당 개발을 관리하는 저장소입니다.
-Pi의 기존 `game` 코드와 Jetson의 TCP·영상 예제를 기준으로 시작했습니다.
-수업 참고 코드 `lecturecode`는 저장소에 포함하지 않습니다.
-담당 범위와 Git 사용 흐름은 [저장소 관리](docs/repository.md)를 참고하세요.
-장비별 작업 폴더와 실행 환경: [Pi](docs/setup-pi.md), [Jetson](docs/setup-jetson.md).
-[STM32 Wi-Fi 연결 직후 수신 확인](docs/stm-wifi-test.md).
-[통신·게임 책임 분리와 검증 상태](docs/architecture.md).
-[Jetson 웹캠 검출·추적 개발](docs/jetson-development.md).
-[게임 영상 입력·영역·결승선 설정](docs/game-camera-setup.md).
-[프로젝트 트러블슈팅 기록·추론 최적화 계획](docs/troubleshooting.md).
-[Jetson TensorRT 엔진 생성·비교](docs/jetson-engine-optimization.md).
-[Jetson 웹 영상 모니터·게임 DB 조회](docs/web-monitor.md).
-[웹캠 구역·결승선·두 사람 추적 검증](docs/vision-validation.md).
-[Pi MariaDB 기본 구성·웹 조회 검증](docs/database.md).
-[관절 검출 비교 전 백업·복원 절차](docs/backup-before-pose.md).
-[별도 관절 모델·속도 비교·웹 미리보기](docs/pose-comparison.md).
-[웹 시험 시작·중지와 원본 프레임·좌표 기록](docs/pose-recording.md).
-[참가자·180초 경기·DB·LCD 실행](docs/game-runtime.md).
+카메라로 참가자의 움직임을 관측하고, 인형의 회전과 게임 진행을 연결하는 IoT 프로젝트입니다. Raspberry Pi가 경기 시간과 최종 결과를 관리하며, 현장·별도 위치의 LCD와 웹에서 같은 경기의 현황을 확인합니다.
+
+| 담당 | 장치 |
+|---|---|
+| 홍성록 | Raspberry Pi · Jetson |
+| 박정환 | STM32 · Arduino |
+
+## 주요 기능
+
+- 웹에서 경기 구역·결승선·통과 방향 설정
+- 시작 시 구역 안 참가자 등록, 기본 180초 경기 진행
+- 인형 회전 처리·판정 시작 응답을 확인하는 단계 제어
+- 고정 기준 자세와 관절 위치를 비교하는 움직임 후보 생성
+- Pi에서 경기·단계·참가자를 검증한 후 통과·탈락 확정
+- 두 LCD의 시간·인원 표시, 웹 현황 조회와 MariaDB 기록
+- 구호·탈락 효과음, 중지·복귀·재시작 처리
 
 ## 구성
 
-- `pi/server`: TCP 메시지 중계 서버와 로그인 ID 설정.
-- `pi/bluetooth`: Arduino Bluetooth ↔ TCP 중계 프로그램.
-- `pi/controller`: Pi C 게임 제어기. --game에서 참가자 고정·180초·결과·DB 저널·LCD 전송.
-- `tools/tcp_client`: Pi·Jetson 공용 TCP 진단 소스. [STM 연결 시험](tools/tcp_client/README.md).
-- `jetson/tcp_client`: 공용 소스를 Jetson에서 빌드하는 위치.
-- `arduino/bluetooth_uart_test`: Bluetooth 진단용 스케치. LCD·타이머·자동 응답은 아직 미구현.
-- `stm32`: STM32 펌웨어 추가 위치.
-- `stm32/game_controller`: 팀원 STM32CubeIDE 완성 프로젝트를 넣는 폴더. [복사 안내](stm32/game_controller/README.md).
-- `arduino/game_controller`: 팀원 Arduino 완성 스케치를 넣는 폴더. [복사 안내](arduino/game_controller/README.md).
-- `jetson/examples`: 기존 TCP·YOLO 인원 검출 예제. 게임 통합은 아직 미구현.
-- `jetson/vision_client.py`: YOLO·ByteTrack 웹캠 관측을 PI로 전송하는 Python 클라이언트.
-- `jetson/game`: 공통 웹캠·영상 입력, 영역 설정 브라우저 화면, 설정 검증 모듈.
-- `docs/protocol.md`: 주소 규칙과 LCD 테스트 메시지 합의안.
+```text
+Jetson: 카메라 · 관절 관측 · 웹
+                  ↕ TCP
+Pi: 메시지 중계 · 경기 제어 · 시간 · 최종 판정 · DB 저장
+       ↕ Wi-Fi                     ↕ Bluetooth 중계
+STM32: 버튼 · 모터 · LED · LCD     Arduino: 별도 위치 LCD
+```
 
-## Pi에서 빌드
+Jetson의 영상 관측은 후보이며 최종 결과는 Pi가 결정합니다. 회전 완료는 STM32 펌웨어 처리 완료 응답 기준입니다.
 
-저장소 루트에서 아래 명령을 실행합니다. Bluetooth 프로그램은 시스템에 BlueZ 개발 헤더와 라이브러리(`libbluetooth-dev`)가 필요합니다.
+| 위치 | 내용 |
+|---|---|
+| `pi/server` | TCP 로그인·메시지 중계 |
+| `pi/controller` | C 경기 제어기·타이머·단계·결과·LCD 명령 |
+| `pi/bluetooth` | TCP ↔ Arduino Bluetooth 중계 |
+| `pi/game_db_writer.py` | 로컬 저널의 MariaDB 반영·재시도 |
+| `jetson/game` | 영상 입력·구역 설정·관절 후보·게임 연결 |
+| `jetson/web_server.py`, `jetson/web` | 웹 미리보기·현황·설정·진단 |
+| `stm32/game_controller` | STM32CubeIDE 펌웨어 프로젝트 |
+| `arduino/game_controller` | Arduino 현황 표시 펌웨어 |
+| `tests` | 단위·모의 통신·통합 검증 |
+
+기존 수업 예제와 COUNT 진단 코드는 별도로 보존합니다. COUNT 진단은 실제 경기 모드와 구분합니다.
+
+## 실행
+
+장치별 환경과 모델·DB·서비스 준비는 [Pi 설정](docs/setup-pi.md), [Jetson 설정](docs/setup-jetson.md), [현재 게임 실행 문서](docs/game-runtime.md)를 따릅니다. 아래는 준비된 Pi에서 실행하는 명령입니다.
 
 ```bash
 make -C pi/server
 make -C pi/controller
-make -C pi/bluetooth
+make -C pi/bluetooth  # libbluetooth-dev 필요
 ```
 
-## 실제 경기 실행 (2026-10-08)
-
-Pi 서버와 Bluetooth 중계는 기존처럼 켜고, PI 클라이언트는 다음 하나만 실행합니다.
+Pi 서버와 Bluetooth 중계를 실행하고 Jetson 웹·연결기 서비스가 준비된 상태에서:
 
 ```bash
 ./pi/controller/iot_client 180
 ```
 
-백그라운드 실행은 `python3 tools/start_pi_game.py`입니다.
-20초 단축 경기 시험은 `python3 tools/start_pi_game.py 20`으로 실행합니다.
-실행 중인 PI 클라이언트를 먼저 종료해야 하며, 옵션을 생략하면 기본 180초입니다.
-Jetson 웹과 연결기는 등록된 서비스로 자동 실행합니다.
-복귀 완료 HOME → 사람이 구역 안에 들어오기 → STM START 순서입니다.
-0명일 때는 시작하지 않습니다. 시간 만료 시 남은 참가자는 모두 탈락합니다.
-기존 `--cycle-test`는 한 회차 진단용입니다. 같은 PI ID로 둘을 동시에 실행하면
-기존 연결이 교체되므로 새 게임 테스트에는 --game을 사용하세요.
-자세한 검증·DB·LCD 팀원 전달은 [현재 게임 실행](docs/game-runtime.md)을 따릅니다.
+시간을 생략하면 180초입니다. 백그라운드 실행은 `python3 tools/start_pi_game.py`, 단축 시험은 `python3 tools/start_pi_game.py 20`을 사용합니다. 같은 PI 클라이언트를 중복 실행하지 않습니다.
 
-## COUNT 통신 테스트 (게임과 별도 진단)
+1. 인형 복귀와 Jetson 대기가 완료된 HOME 상태를 확인합니다.
+2. 웹에서 구역·결승선·방향을 설정하고 참가자가 들어섭니다.
+3. STM32 시작 버튼으로 경기를 시작합니다.
+4. 전원 결과 확정 또는 시간 만료 시 종료합니다. 중지 버튼은 경기 중단입니다.
 
-Pi에서 `pi/server` 폴더의 `./iot_server 5000`을 실행합니다.
-로그인 설정은 `idpasswd.example.txt`를 참고하여 실제 `idpasswd.txt`로 준비합니다.
-Jetson에서는 다음 명령을 사용합니다. 이미 실행 중이면 중복 실행하지 마세요.
+## 문서
 
-```bash
-python3 jetson/count_test_client.py
-```
+| 목적 | 문서 |
+|---|---|
+| 실행·게임 규칙·DB·장애 처리 | [게임 실행](docs/game-runtime.md) |
+| 환경·저장소 관리 | [Pi](docs/setup-pi.md) · [Jetson](docs/setup-jetson.md) · [Git 운영](docs/repository.md) |
+| 화면·영역 설정 | [웹 모니터](docs/web-monitor.md) · [카메라 설정](docs/game-camera-setup.md) |
+| 모델·성능·검증 | [엔진 비교](docs/jetson-engine-optimization.md) · [관절 비교](docs/pose-comparison.md) · [현장 검증](docs/vision-validation.md) |
+| 코드 이해·개발 기록 | [코드 해설](docs/code-evolution-guide.md) · [트러블슈팅](docs/troubleshooting.md) |
+| DB·통신 | [DB 구성](docs/database.md) · [프로토콜](docs/protocol.md) |
+| 발표 준비 | [최신 구성과 담당](docs/presentation-readiness.md) · [11장 대본](docs/presentation-script.md) · [대본 검토](docs/presentation-script-review-20261012.md) · [예상 질문 30개](docs/presentation-qa-20261012.md) |
+| 이번 main 반영 검증 | [2026-10-12 통합 기록](docs/main-release-20261012.md) |
 
-Jetson Python 목적지는 PI로 고정됩니다. Pi에서는 서버와 함께
-`./pi/controller/iot_client 127.0.0.1 5000 PI`를 실행합니다.
-PI 제어 클라이언트가 가상 COUNT를 검사해 ARD·STM 명령을 만들고 서버가 중계합니다.
-MCU 수신 헤더와 응답 목적지는 PI입니다. 서버는 게임 로직을 처리하지 않습니다.
-Arduino는 Pi의 Bluetooth 중계가 ARD로 로그인해야 합니다.
-STM32는 ESP-01 TCP 연결 뒤 STM으로 로그인합니다.
-가상 데이터는 3초 간격의 기존 여섯 패턴이며 카메라 결과가 아닙니다.
-RUN/STOP/RESET은 보내지 않습니다.
-[연결·수신·로그 확인](docs/stm-wifi-test.md)을 참고하세요.
+## 검증 범위와 한계
 
-## 현재 제한
+- 코드상 참가자 상한은32명이며, 실용 최대 인원을 검증한 수치는 아닙니다. 교차·가림 뒤 ID 유지와 먼 거리·조명별 오탐/누락은 추가 검증 대상입니다.
+- 발표의12.76→18.53FPS는 동일598프레임 영상·YOLOv8n·입력384×640에서의 PyTorch FP32/TensorRT FP16 비교입니다. 화면·저장·Pi통신을 제외했으며 현재 관절 게임 전체 성능이 아닙니다. 지연·출력 일치도·정확도 한계는 [측정 기록](docs/jetson-engine-optimization.md)에 정리했습니다.
+- 사진·시연 영상 추가, 최종 촬영 조건의 전체 경기·재시작·무선 단절 리허설은 별도 확인이 필요합니다. 놀이공원 활용은 향후 방향입니다.
 
-기본 COUNT 중계 모드는 통신 진단용이고 --game이 실제 참가자/게임 상태를 관리합니다.
-Jetson USB 사운드 연동을 구현했습니다. MCU TIME 양 보드 표시 시험은 통과했고,
-사운드와 실제 경기 전체 흐름·180초 현장 시험은 남아 있습니다.
-서버는 인증 후 LF 단위로 메시지를 누적하고 여러 줄·초과 길이를 처리합니다.
-서버 로그인 분할 수신·부분 송신·동일 ID 재접속 처리는 보완했습니다. 무선 단절의 현장 검증은 별도입니다.
-MCU는 로그인 알림과 명령을 구분해야 합니다.
+## 자료 관리
+
+비밀값·실제 로그인 설정·모델 가중치·엔진·DB·로그·사용자 영상과 음원은 커밋하지 않습니다. 예제 설정을 복사해 장치별로 준비합니다. 웹 발표 원본과 단일 HTML은 별도 발표작업 폴더에서 관리하며, 저장소에는 개발·검토 문서를 둡니다.

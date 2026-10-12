@@ -25,3 +25,6 @@ venv/
 /recordings/
 /.connection-setup/
 .runtime/
+
+# Local generated presentation assets (presentation sources are maintained separately).
+/output/

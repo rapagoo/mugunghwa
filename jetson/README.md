@@ -1,15 +1,11 @@
-# Jetson
+# Jetson 영상·웹·게임 연결
 
-웹캠과 게임 영상 판정 코드를 개발할 위치입니다.
+카메라 입력과 YOLO 관절 관측, 경기 구역 설정, Pi 후보 송신과 웹 현황 조회를 담당합니다. 최종 통과·탈락은 Pi에서 확정합니다.
 
-`examples/`에는 기존 `/home/jetson/python_tcp` 코드를 보존했습니다.
+- `game/`: 영상 입력·검출/추적·기하 설정·관절 움직임 후보·게임 연결기
+- `web_server.py`, `web/`: 영상 미리보기·경기 현황·설정·진단
+- `build_engine.py`, `benchmark_engine.py`: TensorRT 엔진 준비와 별도 성능 비교
+- `vision_client.py`, `count_test_client.py`: 관측/가상 COUNT 진단
+- `examples/`: 기존 수업 예제 보존
 
-- `iot_client.py`: 수업 TCP 서버용 수동 클라이언트. 기본 주소는 localhost입니다.
-- `iot_server.py`: 독립적인 단일 연결 TCP 서버 예제.
-- `person_count.py`: OpenCV와 Ultralytics YOLO를 사용하는 웹캠 인원 검출 예제.
-
-게임별 참가자 추적·움직임·결승선 판정과 Pi 통합은 아직 구현되지 않았습니다.
-기존 클라이언트의 예외 경로에는 `sys` import 누락이 있으며 후속 개선 대상입니다.
-영상 예제는 `cv2`, `ultralytics` 및 `yolov8n.pt`가 필요합니다.
-현재 Jetson 환경의 패키지 버전·모델 호환성·실행 성능은 별도로 검증해야 합니다.
-모델 가중치는 Git에 포함하지 않습니다.
+모델·엔진은 Git에 포함하지 않습니다. 설치와 서비스 구성은 [Jetson 설정](../docs/setup-jetson.md), 실제 게임은 [게임 실행](../docs/game-runtime.md), 모델 입력과 측정 범위는 [엔진 비교](../docs/jetson-engine-optimization.md)·[관절 비교](../docs/pose-comparison.md)를 참고하세요.
