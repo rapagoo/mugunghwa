@@ -248,10 +248,8 @@ def main():
         database = GameDatabase(args.database)
     from game.recording import TrialRecorder
     recorder=TrialRecorder('.runtime/pose-recordings')
-    from game.volume import SpeakerVolume
-    volume=SpeakerVolume('.runtime/audio/volume.json')
     server = create_server(args.host,args.port,monitor,database,calibration,recorder,
-        dict(model=args.model,imgsz=args.imgsz,confidence=.35,preview_hz=args.preview_hz), volume=volume)
+        dict(model=args.model,imgsz=args.imgsz,confidence=.35,preview_hz=args.preview_hz))
     stop = threading.Event()
     def supervise():
         while not stop.is_set():

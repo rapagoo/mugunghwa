@@ -22,5 +22,3 @@ body[data-view="game"] .row{padding:14px 0}
 .session-status{font-size:13px;color:#dfc48a;margin:12px 0 18px}.session-status[data-state="ok"]{color:#a7ebc8}.session-status[data-state="offline"]{color:#ffa996}.device-card>small{margin-bottom:8px}
 
 .game-reset{margin-top:26px;padding-top:20px;border-top:1px solid #293b41}.game-reset button{width:100%}
-
-.speaker-panel{display:flex;justify-content:space-between;align-items:center;gap:20px;margin-bottom:20px}.speaker-controls{display:flex;align-items:center;gap:16px;flex-wrap:wrap}.speaker-controls label{min-width:90px}.speaker-controls input{width:200px;accent-color:#a7ebc8}.speaker-controls button[aria-pressed="true"]{background:#61443b;border-color:#b37c68}@media(max-width:600px){.speaker-panel{align-items:flex-start;flex-direction:column}.speaker-controls input{width:140px}}
