@@ -8,6 +8,7 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from .mariadb_store import DatabaseUnavailable
 from .calibration_store import CalibrationConflict
+from .volume import VolumeUnavailable
 
 
 class Monitor:
@@ -176,7 +177,7 @@ class GameDatabase:
                         events=[dict(e) for e in events])
 
 
-def create_server(host, port, monitor, database, calibration=None, recorder=None, recording_metadata=None):
+def create_server(host, port, monitor, database, calibration=None, recorder=None, recording_metadata=None, volume=None):
     static = Path(__file__).resolve().parents[1] / 'web'
 
     class Handler(BaseHTTPRequestHandler):
@@ -194,7 +195,12 @@ def create_server(host, port, monitor, database, calibration=None, recorder=None
         def do_GET(self):
             route = self.path.split('?', 1)[0]
             try:
-                if route == '/cycle.js':
+                if route == '/api/volume':
+                    if volume is None: raise VolumeUnavailable('USB speaker unavailable')
+                    self.send(json.dumps(volume.snapshot()).encode(),'application/json')
+                elif route == '/audio.js':
+                    self.send((static/'audio.js').read_bytes(),'text/javascript; charset=utf-8')
+                elif route == '/cycle.js':
                     self.send((static/'cycle.js').read_bytes(), 'text/javascript; charset=utf-8')
                 elif route == '/api/commands':
                     self.send(json.dumps(monitor.commands_snapshot()).encode(), 'application/json')
@@ -251,11 +257,13 @@ def create_server(host, port, monitor, database, calibration=None, recorder=None
                     self.send(b'Not found', 'text/plain', 404)
             except (BrokenPipeError, ConnectionResetError, TimeoutError):
                 self.close_connection = True
+            except VolumeUnavailable:
+                self.send(b'USB speaker unavailable', 'text/plain', 503)
             except (sqlite3.Error, DatabaseUnavailable):
                 self.send(b'Database unavailable', 'text/plain', 503)
 
         def do_POST(self):
-            if self.path not in ('/api/commands','/api/connections','/api/cycle','/api/calibration','/api/validation/reset','/api/validation/phase','/api/recording/start','/api/recording/stop') or (self.path == '/api/calibration' and calibration is None):
+            if self.path not in ('/api/volume','/api/commands','/api/connections','/api/cycle','/api/calibration','/api/validation/reset','/api/validation/phase','/api/recording/start','/api/recording/stop') or (self.path == '/api/calibration' and calibration is None):
                 self.send(b'Not found', 'text/plain', 404)
                 return
             if self.path in ('/api/cycle','/api/connections','/api/commands') and self.client_address[0] not in ('127.0.0.1','::1'):
@@ -279,6 +287,10 @@ def create_server(host, port, monitor, database, calibration=None, recorder=None
                     raise ValueError('Invalid request length')
                 self.connection.settimeout(5)
                 body = json.loads(self.rfile.read(length))
+                if self.path == '/api/volume':
+                    if volume is None: raise VolumeUnavailable('USB speaker unavailable')
+                    self.send(json.dumps(volume.update(body)).encode(),'application/json')
+                    return
                 if self.path == '/api/commands':
                     monitor.set_command(body)
                     self.send(b'{}','application/json')
@@ -329,6 +341,8 @@ def create_server(host, port, monitor, database, calibration=None, recorder=None
                 data = calibration.save(body['config'], body['expected_revision'],
                                         state['width'], state['height'])
                 self.send(json.dumps(data).encode(), 'application/json; charset=utf-8')
+            except VolumeUnavailable:
+                self.send(b'USB speaker unavailable','text/plain',503)
             except CalibrationConflict as error:
                 self.send(str(error).encode(), 'text/plain; charset=utf-8', 409)
             except (ValueError, KeyError, TypeError):
