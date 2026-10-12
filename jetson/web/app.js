@@ -13,6 +13,21 @@ function rows(id,items,empty){
     row.className='row';a.textContent=left;b.textContent=right;b.className=status||'';row.append(a,b);box.append(row);
   }
 }
+function deviceStatus(id,label,state,detail){
+  put('link-'+id,label);put('detail-'+id,detail);
+  if(el('link-'+id))el('link-'+id).dataset.state=state;
+}
+function boardStatus(id,devices){
+  const board=devices.find(d=>d.id===id.toUpperCase());
+  const age=board?.age_seconds;
+  const recent=Number.isFinite(age)&&age>=0&&age<=10;
+  let detail='아직 응답 기록이 없습니다.';
+  if(board?.last_seen_at){
+    const date=new Date(board.last_seen_at);
+    detail='최근 응답 '+(Number.isNaN(date.getTime())?'시각 확인 불가':date.toLocaleString('ko-KR',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit',second:'2-digit'}));
+  }
+  deviceStatus(id,recent?'응답 확인':'현재 연결 미확인',recent?'ok':'unknown',detail);
+}
 async function get(path){
   const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),5000);
   try{const response=await fetch(path,{cache:'no-store',signal:controller.signal});if(!response.ok)throw Error(response.status);return await response.json()}
@@ -23,6 +38,7 @@ async function refreshVision(){
     const v=await get('/api/vision');visionConnected=true;
     if(typeof renderValidation==='function')renderValidation(v);
     const stale=v.state==='running'&&(v.result_age_ms==null||v.result_age_ms>2000);
+    deviceStatus('vision',v.state==='running'&&!stale?'검출 중':v.state==='preparing'?'준비 중':'확인 필요',v.state==='running'&&!stale?'ok':'unknown',v.state==='running'&&!stale?'카메라 영상 수신 정상':'카메라 · 검출 상태를 확인해 주세요.');
     if(Number.isFinite(v.width)&&Number.isFinite(v.height)&&v.width>0&&v.height>0)
       document.querySelector('.preview').style.setProperty('--camera-ratio',v.width+'/'+v.height);
     put('source',v.source==='video'?'영상 테스트 · 1×':'웹캠 · 실시간');
@@ -37,6 +53,7 @@ async function refreshVision(){
       (v.pose?.enabled?` 관절 검출 비교 · 보이는 관절 수 ${v.pose.visible_keypoints.join(', ')||'—'}/17 · 정지 판정은 관절 기준입니다.`:'');
     if(el('stream').dataset.retry==='1'){el('stream').src='/stream.mjpg?retry='+Date.now();el('stream').dataset.retry='0'}
   }catch(error){
+    deviceStatus('vision','연결 확인 필요','unknown','웹 서버의 응답이 없습니다.');
     visionConnected=false;put('vision-state','서버 연결 끊김');el('overlay').hidden=false;el('overlay').textContent='서버 연결을 확인해 주세요';el('stream').dataset.retry='1';
     put('test-freshness','서버 연결이 끊겼습니다. 이전 관측입니다.');
   }finally{connection();setTimeout(refreshVision,1000)}
@@ -44,6 +61,8 @@ async function refreshVision(){
 async function refreshGame(){
   try{
     const g=await get('/api/game');gameConnected=g.connected!==false;
+    deviceStatus('db',gameConnected?'조회 정상':'연결 확인 필요',gameConnected?'ok':'unknown',gameConnected?'경기 기록 조회 정상':'DB 연결을 확인해 주세요.');
+    for(const id of ['stm','ard'])boardStatus(id,g.devices||[]);
     if(g.game){
       const active=!['finished','aborted'].includes(g.game.phase);gameActive=active;
       const stale=active&&Date.now()-Date.parse(g.game.updated_at)>5000;
@@ -64,7 +83,7 @@ async function refreshGame(){
     rows('participants',g.participants.map((p,i)=>[p.name||(gameView?'참가자 '+(i+1):p.id),g.game?.phase==="aborted"&&p.status==="playing"?"미완료":labels[p.status]||p.status,p.status]),'경기가 시작되면 표시됩니다.');
     rows('devices',(g.devices||[]).map(d=>[d.id,d.connection_state+' · '+(d.last_ack||'—')+' · '+(d.last_seen_at||'수신 기록 없음')]),'아직 보드 상태 수집이 연결되지 않았습니다.');
     rows('events',g.events.map(e=>[`${e.kind}${e.participant_id?' · '+e.participant_id:''}`,e.occurred_at]),'아직 저장된 이벤트가 없습니다.');
-  }catch(error){gameConnected=false;put('game-state','게임 상태 조회 실패');put('game-meta','마지막 표시값일 수 있습니다. 서버 상태를 확인해 주세요.')}
+  }catch(error){deviceStatus('db','연결 확인 필요','unknown','경기 기록을 조회할 수 없습니다.');for(const id of ['stm','ard'])deviceStatus(id,'현재 연결 미확인','unknown','보드 응답 기록 조회 불가');gameConnected=false;put('game-state','게임 상태 조회 실패');put('game-meta','마지막 표시값일 수 있습니다. 서버 상태를 확인해 주세요.')}
   finally{connection();setTimeout(refreshGame,2000)}
 }
 el('stream').addEventListener('error',()=>{el('stream').dataset.retry='1'});

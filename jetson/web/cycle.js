@@ -17,6 +17,7 @@
       if(!response.ok) throw new Error('조회 실패');
       const data = await response.json(), cycle = data.cycle;
       const healthy = data.healthy && cycle;
+      if(typeof deviceStatus==='function')deviceStatus('control',healthy?'연결 정상':'연결 확인 필요',healthy?'ok':'unknown',healthy?'Pi 경기 상태 수신 정상':data.reason==='Pi heartbeat missing'?'Pi 제어 클라이언트 응답 대기':'Pi 서버 · 제어 클라이언트 연결을 확인해 주세요.');
       const recovering = cycle && ['RECOVER','RECOVERY_WAIT','HOME'].includes(cycle.stage);
       const phase = healthy && cycle.stage!=='ERROR' && !recovering ? data.applied_phase : 'idle';
       el('cycle-signal').textContent = !healthy ? '연결 확인 · 판정 상태 불명' :
@@ -36,6 +37,7 @@
         cycle.error!=='NONE' ? errors[cycle.error] :
         gameView?'':'STM 시작 버튼으로 경기를 시작하세요. 게임 중에는 구역과 수동 시험 단계를 바꾸지 마세요.';
     } catch(error) {
+      if(typeof deviceStatus==='function')deviceStatus('control','연결 확인 필요','unknown','경기 제어 상태를 조회할 수 없습니다.');
       el('cycle-signal').textContent='서버 연결 확인 · 판정 상태 불명';
       el('cycle-signal').dataset.phase='idle';
       el('cycle-link').textContent='조회 실패';
