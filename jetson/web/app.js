@@ -58,11 +58,18 @@ async function refreshVision(){
     put('test-freshness','서버 연결이 끊겼습니다. 이전 관측입니다.');
   }finally{connection();setTimeout(refreshVision,1000)}
 }
-async function refreshGame(){
+let clearedGameId=null;
+try{clearedGameId=localStorage.getItem('mugunghwa.clearedGameId');}catch(error){}
+async function refreshGame(schedule=true){
   try{
     const g=await get('/api/game');gameConnected=g.connected!==false;
     deviceStatus('db',gameConnected?'조회 정상':'연결 확인 필요',gameConnected?'ok':'unknown',gameConnected?'경기 기록 조회 정상':'DB 연결을 확인해 주세요.');
     for(const id of ['stm','ard'])boardStatus(id,g.devices||[]);
+    const terminal=g.game&&['finished','aborted'].includes(g.game.phase);
+    const cleared=gameView&&terminal&&g.game.id===clearedGameId;
+    if(el('reset-game-display'))el('reset-game-display').disabled=!terminal||cleared;
+    if(cleared){g.game=null;g.participants=[];g.events=[];}
+    put('reset-game-note',cleared?'표시를 초기화했습니다. 지난 경기 기록은 보존됩니다.':'지난 경기 기록은 보존됩니다. 경기 종료 후 사용할 수 있습니다.');
     if(g.game){
       const active=!['finished','aborted'].includes(g.game.phase);gameActive=active;
       const stale=active&&Date.now()-Date.parse(g.game.updated_at)>5000;
@@ -77,14 +84,14 @@ async function refreshGame(){
       gameActive=false;
       for(const id of ['phase-move','phase-stop','phase-idle'])if(el(id))el(id).disabled=false;
       if(el('calibration-link'))el('calibration-link').hidden=false;
-      put('game-state','경기 대기');put('remaining','— : —');
-      put('game-meta','구역 안에 선 뒤 시작 버튼을 눌러주세요.');for(const id of ['total','passed','failed'])put(id,'—');
+      put('game-state','경기 대기');put('remaining',cleared?'0 : 00':'— : —');
+      put('game-meta','구역 안에 선 뒤 시작 버튼을 눌러주세요.');for(const id of ['total','passed','failed'])put(id,cleared?'0':'—');
     }
     rows('participants',g.participants.map((p,i)=>[p.name||(gameView?'참가자 '+(i+1):p.id),g.game?.phase==="aborted"&&p.status==="playing"?"미완료":labels[p.status]||p.status,p.status]),'경기가 시작되면 표시됩니다.');
     rows('devices',(g.devices||[]).map(d=>[d.id,d.connection_state+' · '+(d.last_ack||'—')+' · '+(d.last_seen_at||'수신 기록 없음')]),'아직 보드 상태 수집이 연결되지 않았습니다.');
     rows('events',g.events.map(e=>[`${e.kind}${e.participant_id?' · '+e.participant_id:''}`,e.occurred_at]),'아직 저장된 이벤트가 없습니다.');
-  }catch(error){deviceStatus('db','연결 확인 필요','unknown','경기 기록을 조회할 수 없습니다.');for(const id of ['stm','ard'])deviceStatus(id,'응답 조회 불가','unknown','보드 응답 기록 조회 불가');gameConnected=false;put('game-state','게임 상태 조회 실패');put('game-meta','마지막 표시값일 수 있습니다. 서버 상태를 확인해 주세요.')}
-  finally{connection();setTimeout(refreshGame,2000)}
+  }catch(error){if(el('reset-game-display'))el('reset-game-display').disabled=true;deviceStatus('db','연결 확인 필요','unknown','경기 기록을 조회할 수 없습니다.');for(const id of ['stm','ard'])deviceStatus(id,'응답 조회 불가','unknown','보드 응답 기록 조회 불가');gameConnected=false;put('game-state','게임 상태 조회 실패');put('game-meta','마지막 표시값일 수 있습니다. 서버 상태를 확인해 주세요.')}
+  finally{connection();if(schedule)setTimeout(refreshGame,2000)}
 }
 el('stream').addEventListener('error',()=>{el('stream').dataset.retry='1'});
 refreshVision();refreshGame();
@@ -102,3 +109,16 @@ async function refreshConnections(){
   finally{setTimeout(refreshConnections,2000);}
 }
 if(gameView)refreshConnections();
+
+if(el('reset-game-display'))el('reset-game-display').addEventListener('click',async()=>{
+  el('reset-game-display').disabled=true;
+  try{
+    const data=await get('/api/game');
+    if(!data.game||!['finished','aborted'].includes(data.game.phase)){
+      put('reset-game-note','진행 중인 경기는 초기화할 수 없습니다. 먼저 경기를 중지해 주세요.');return;
+    }
+    clearedGameId=data.game.id;
+    try{localStorage.setItem('mugunghwa.clearedGameId',clearedGameId);}catch(error){}
+    await refreshGame(false);
+  }catch(error){put('reset-game-note','경기 상태를 확인할 수 없습니다. 연결 복구 후 다시 시도해 주세요.');}
+});
