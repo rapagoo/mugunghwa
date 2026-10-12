@@ -14,6 +14,7 @@ class Monitor:
     def __init__(self, source):
         self.condition = threading.Condition()
         self.jpeg = None
+        self.game_jpeg = None
         self.camera_jpeg = None
         self.serial = 0
         self.closed = False
@@ -75,12 +76,14 @@ class Monitor:
                         healthy=bool(healthy and age is not None and age<=2000 and fresh), reason=self.cycle_reason,
                         applied_phase=self.state.get('pose_trial',{}).get('phase','idle'))
 
-    def update(self, data, jpeg=None, camera_jpeg=None):
+    def update(self, data, jpeg=None, camera_jpeg=None, game_jpeg=None):
         with self.condition:
             self.state.update(data)
             if jpeg is not None:
                 self.jpeg = jpeg
                 self.serial += 1
+            if game_jpeg is not None:
+                self.game_jpeg = game_jpeg
             if camera_jpeg is not None:
                 self.camera_jpeg = camera_jpeg
             self.condition.notify_all()
@@ -200,11 +203,11 @@ def create_server(host, port, monitor, database, calibration=None, recorder=None
                     data['frame_size'] = [state.get('width'), state.get('height')]
                     data['applied_revision'] = state.get('calibration_revision')
                     self.send(json.dumps(data).encode(), 'application/json; charset=utf-8')
-                elif route in ('/frame.jpg', '/camera.jpg'):
+                elif route in ('/frame.jpg', '/camera.jpg', '/game-frame.jpg'):
                     with monitor.condition:
-                        jpeg = monitor.jpeg if route == '/frame.jpg' else monitor.camera_jpeg
+                        jpeg = monitor.game_jpeg if route == '/game-frame.jpg' else monitor.jpeg if route == '/frame.jpg' else monitor.camera_jpeg
                     self.send(jpeg or b'Preview preparing', 'image/jpeg' if jpeg else 'text/plain', 200 if jpeg else 503)
-                elif route == '/stream.mjpg':
+                elif route in ('/stream.mjpg','/game-stream.mjpg'):
                     self.connection.settimeout(10)
                     self.send_response(200)
                     self.send_header('Content-Type', 'multipart/x-mixed-replace; boundary=frame')
@@ -217,7 +220,8 @@ def create_server(host, port, monitor, database, calibration=None, recorder=None
                             monitor.condition.wait_for(lambda: monitor.closed or monitor.serial != serial, timeout=2)
                             if monitor.closed:
                                 break
-                            serial, jpeg = monitor.serial, monitor.jpeg
+                            serial = monitor.serial
+                            jpeg = monitor.game_jpeg if route == '/game-stream.mjpg' else monitor.jpeg
                         if jpeg is not None:
                             self.wfile.write(b'--frame\r\nContent-Type: image/jpeg\r\nContent-Length: ' +
                                              str(len(jpeg)).encode() + b'\r\n\r\n' + jpeg + b'\r\n')

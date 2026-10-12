@@ -149,6 +149,7 @@ def run_vision(args, monitor, stop, calibration, recorder):
                 result_latency_ms=data['result_latency_ms'],calibration_revision=revision,
                 epoch=epoch,trial=motion_result,pose_trial=pose_result,source_size=[width,height]),frame)
             jpeg = None
+            game_jpeg = None
             camera_jpeg = None
             if completed-last_jpeg >= 1/args.preview_hz:
                 preview = frame.copy()
@@ -165,6 +166,7 @@ def run_vision(args, monitor, stop, calibration, recorder):
                         for x,y,c in person:
                             if c>=.5:
                                 cv2.circle(preview,(round(x),round(y)),3,(255,180,60),-1)
+                debug_labels = []
                 for i, (x1,y1,x2,y2) in enumerate(boxes):
                     observation = data['validation']['observations'][i]
                     color = (50,210,90) if observation['in_roi'] else (150,150,150) if config else (0,220,255)
@@ -183,7 +185,16 @@ def run_vision(args, monitor, stop, calibration, recorder):
                         label += ' POSE ' + ('CANDIDATE' if p['stop_candidate'] else p['status'].upper())
                         if p['stop_candidate']:
                             color = (60,60,255)
-                    cv2.putText(preview,label,(round(x1),max(20,round(y1)-5)),cv2.FONT_HERSHEY_SIMPLEX,.6,color,2)
+                    debug_labels.append((label,(round(x1),max(20,round(y1)-5)),color))
+                game_preview = preview
+                if width > 960:
+                    game_preview = cv2.resize(game_preview,(960,round(height*960/width)))
+                ok, encoded_game = cv2.imencode('.jpg',game_preview,[cv2.IMWRITE_JPEG_QUALITY,75])
+                if not ok:
+                    raise RuntimeError('Game JPEG encoding failed')
+                game_jpeg = encoded_game.tobytes()
+                for label, point, color in debug_labels:
+                    cv2.putText(preview,label,point,cv2.FONT_HERSHEY_SIMPLEX,.6,color,2)
                 if width > 960:
                     preview = cv2.resize(preview,(960,round(height*960/width)))
                 ok, encoded = cv2.imencode('.jpg',preview,[cv2.IMWRITE_JPEG_QUALITY,75])
@@ -194,7 +205,7 @@ def run_vision(args, monitor, stop, calibration, recorder):
                 if ok:
                     camera_jpeg = raw.tobytes()
                 last_jpeg = completed
-            monitor.update(data, jpeg, camera_jpeg)
+            monitor.update(data, jpeg, camera_jpeg, game_jpeg)
             previous = completed
     except Exception as error:
         monitor.update(dict(state='error', error=str(error)))

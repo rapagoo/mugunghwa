@@ -96,7 +96,15 @@ class WebTests(unittest.TestCase):
                 url='http://127.0.0.1:'+str(server.server_port)
                 with urlopen(url+'/api/game') as response:
                     self.assertEqual(json.load(response),saved)
-                monitor.update({'people':2},b'cached-jpeg')
+                monitor.update({'people':2},b'cached-jpeg',game_jpeg=b'clean-jpeg')
+                with urlopen(url+'/game-frame.jpg') as response:
+                    self.assertEqual(response.read(),b'clean-jpeg')
+                with urlopen(url+'/game-stream.mjpg', timeout=2) as response:
+                    self.assertEqual(response.readline(),b'--frame\r\n')
+                    self.assertEqual(response.readline(),b'Content-Type: image/jpeg\r\n')
+                    self.assertEqual(response.readline(),b'Content-Length: 10\r\n')
+                    self.assertEqual(response.readline(),b'\r\n')
+                    self.assertEqual(response.read(10),b'clean-jpeg')
                 with urlopen(url+'/frame.jpg') as response:
                     self.assertEqual(response.read(),b'cached-jpeg')
                 with urlopen(url+'/stream.mjpg', timeout=2) as response:
