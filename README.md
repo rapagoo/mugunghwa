@@ -50,11 +50,11 @@ make -C pi/bluetooth
 Pi 서버와 Bluetooth 중계는 기존처럼 켜고, PI 클라이언트는 다음 하나만 실행합니다.
 
 ```bash
-./pi/controller/iot_client 127.0.0.1 5000 PI --game --duration 180 --audio
+./pi/controller/iot_client 180
 ```
 
 백그라운드 실행은 `python3 tools/start_pi_game.py`입니다.
-20초 단축 경기 시험은 `python3 tools/start_pi_game.py --duration 20`으로 실행합니다.
+20초 단축 경기 시험은 `python3 tools/start_pi_game.py 20`으로 실행합니다.
 실행 중인 PI 클라이언트를 먼저 종료해야 하며, 옵션을 생략하면 기본 180초입니다.
 Jetson 웹과 연결기는 등록된 서비스로 자동 실행합니다.
 복귀 완료 HOME → 사람이 구역 안에 들어오기 → STM START 순서입니다.

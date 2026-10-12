@@ -181,6 +181,17 @@ static void handle_line(int sock, char *line, int target_mask)
 
 int main(int argc, char *argv[])
 {
+    /* Short game entry: ./iot_client [seconds], with audio enabled. */
+    char *game_args[] = {argv[0],"127.0.0.1","5000","PI","--game","--audio","--duration","180",NULL};
+    if(argc==2 && (!strcmp(argv[1],"--help") || !strcmp(argv[1],"-h"))) {
+        puts("Game: ./iot_client [seconds] (1..3600; default 180; audio on)\n"
+             "Advanced/diagnostic: ./iot_client <IP> <port> PI [options]");
+        return 0;
+    }
+    if(argc<=2) {
+        if(argc==2)game_args[7]=argv[1];
+        argv=game_args;argc=8;
+    }
     int target_mask = 3;
     if(argc < 4)
         fail("Usage: iot_client <IP> <port> PI [--target BOTH|ARD|STM] [--cycle-test] [--hold-seconds 5] [--ack-timeout 10]");
@@ -244,7 +255,7 @@ int main(int argc, char *argv[])
     if(game_enabled) game_setup(sock);
     cycle_request = (unsigned int)time(NULL) ^ (unsigned int)getpid();
     if(cycle_enabled) {
-        puts(game_enabled ? "GAME READY: START freezes ROI players; 180s default; stop returns rear" : "CYCLE READY: STM START or type start; stop returns rear; no audio/results");
+        puts(game_enabled ? "GAME READY: START freezes ROI players; duration configured; audio enabled by short entry; stop returns rear" : "CYCLE READY: STM START or type start; stop returns rear; no audio/results");
         cycle_recover(sock);
     }
     fflush(stdout);

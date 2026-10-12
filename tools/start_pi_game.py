@@ -5,9 +5,12 @@ from pathlib import Path
 import subprocess
 
 parser=argparse.ArgumentParser(description='Start the Pi game controller without starting a match.')
-parser.add_argument('--duration',type=int,default=180,help='Game limit in seconds (1..3600; default: 180).')
+parser.add_argument('seconds',nargs='?',type=int,help='Game limit in seconds (1..3600; default: 180).')
+parser.add_argument('--duration',type=int,help='Compatibility alias for game limit in seconds.')
 parser.add_argument('--no-audio',action='store_true',help='Use fixed movement time instead of speaker playback.')
 args=parser.parse_args()
+if args.seconds is not None and args.duration is not None: parser.error('Use seconds or --duration, not both')
+args.duration=args.seconds if args.seconds is not None else args.duration if args.duration is not None else 180
 if not 1 <= args.duration <= 3600:
     parser.error('--duration must be 1..3600 seconds')
 
