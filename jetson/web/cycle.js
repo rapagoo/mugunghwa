@@ -17,7 +17,7 @@
       if(!response.ok) throw new Error('조회 실패');
       const data = await response.json(), cycle = data.cycle;
       const healthy = data.healthy && cycle;
-      if(typeof deviceStatus==='function')deviceStatus('control',healthy?'연결 정상':'연결 확인 필요',healthy?'ok':'unknown',healthy?'Pi 경기 상태 수신 정상':data.reason==='Pi heartbeat missing'?'Pi 제어 클라이언트 응답 대기':'Pi 서버 · 제어 클라이언트 연결을 확인해 주세요.');
+      if(typeof deviceStatus==='function')deviceStatus('control',healthy?'연결 정상':'연결 확인 필요',healthy?'ok':'unknown',healthy?'Pi 경기 상태 수신 정상':data.reason==='Pi heartbeat missing'?'Pi 제어 클라이언트 응답 대기':data.reason==='pose inference unavailable or stale'?'Jetson 검출 준비 · 복구 대기':'Pi 서버 · 제어 클라이언트 연결을 확인해 주세요.');
       const recovering = cycle && ['RECOVER','RECOVERY_WAIT','HOME'].includes(cycle.stage);
       const phase = healthy && cycle.stage!=='ERROR' && !recovering ? data.applied_phase : 'idle';
       el('cycle-signal').textContent = !healthy ? '연결 확인 · 판정 상태 불명' :

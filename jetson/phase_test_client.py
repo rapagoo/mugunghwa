@@ -65,6 +65,7 @@ def session(host, port, web, audio=None):
         expected = None
         buffer = bytearray()
         last_ping = time.monotonic()
+        next_connections = 0
         next_health = 0
         cached = {}
         last_health = None
@@ -75,6 +76,9 @@ def session(host, port, web, audio=None):
             conn.sendall(('[PI]'+payload+'\n').encode())
         while True:
             now = time.monotonic()
+            if now >= next_connections:
+                conn.sendall(b'[IDLIST]@WEB@\n')
+                next_connections = now+2
             completed = audio.poll() if audio else None
             if completed:
                 key, ok = completed
@@ -127,6 +131,14 @@ def session(host, port, web, audio=None):
             buffer.extend(chunk)
             while b'\n' in buffer:
                 line, _, rest = buffer.partition(b'\n'); buffer = bytearray(rest)
+                if line.startswith(b'[JETSON]@WEB@'):
+                    if len(line) > 384: raise RuntimeError('Oversized connection list')
+                    try:
+                        ids=line.decode('ascii')[len('[JETSON]@WEB@'):].split()
+                        web_json(web, '/api/connections', {'ids':ids})
+                    except Exception as error:
+                        print('CONNECTION_REPORT_ERROR '+str(error),flush=True)
+                    continue
                 if len(line) >= 100:
                     raise RuntimeError('Oversized message')
                 text = line.decode('ascii').rstrip('\r')
@@ -197,7 +209,7 @@ def session(host, port, web, audio=None):
                     send(ack); print('APPLIED '+ack,flush=True)
                 except Exception as error:
                     send('TRIAL@ERROR'); print('PHASE_ERROR '+str(error),flush=True)
-            if len(buffer)>=100:
+            if len(buffer)>=(384 if buffer.startswith(b'[JETSON]@WEB@') else 100):
                 raise RuntimeError('Unterminated oversized message')
 
 

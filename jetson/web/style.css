@@ -18,3 +18,5 @@ body[data-view="game"] .row{padding:14px 0}
 @media(max-width:600px){header{padding:18px 4vw}.panel{padding:18px}body[data-view="game"] .cycle-panel{padding:18px}.panelhead{gap:10px;flex-wrap:wrap}}
 
 .connectivity{margin-bottom:20px}.device-grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px}.device-card{padding:16px;background:#101b20;border:1px solid #293b41;border-radius:10px}.device-card h3{margin:0;font-size:14px}.device-card p{font-size:11px;margin:8px 0 16px}.device-card strong{font-size:15px;margin:0 0 12px;color:#dfc48a}.device-card strong::before{content:"";display:inline-block;width:7px;height:7px;border-radius:50%;background:currentColor;margin-right:7px}.device-card strong[data-state="ok"]{color:#a7ebc8}.device-card small{font-size:11px;line-height:1.6}@media(max-width:1100px){.device-grid{grid-template-columns:repeat(3,minmax(0,1fr))}}@media(max-width:600px){.device-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+
+.session-status{font-size:13px;color:#dfc48a;margin:12px 0 18px}.session-status[data-state="ok"]{color:#a7ebc8}.session-status[data-state="offline"]{color:#ffa996}.device-card>small{margin-bottom:8px}

@@ -15,6 +15,24 @@ from game.mariadb_store import DatabaseUnavailable
 
 
 class WebTests(unittest.TestCase):
+    def test_server_connections_expire_without_marking_devices_disconnected(self):
+        monitor=Monitor('camera')
+        self.assertFalse(monitor.connections_snapshot()['fresh'])
+        with patch('game.web.time.monotonic',return_value=10):
+            monitor.set_connections({'ids':['STM','ARD','PI','JETSON']})
+            self.assertTrue(monitor.connections_snapshot()['fresh'])
+            self.assertIn('STM',monitor.connections_snapshot()['ids'])
+        with patch('game.web.time.monotonic',return_value=17):
+            snapshot=monitor.connections_snapshot()
+            self.assertFalse(snapshot['fresh'])
+            self.assertIn('STM',snapshot['ids'])  # Historical list is explicitly stale.
+        with self.assertRaises(ValueError):
+            monitor.set_connections({'ids':['invalid-id']})
+        with patch('game.web.time.monotonic',return_value=18):
+            monitor.set_connections({'ids':['PI','JETSON']})
+            self.assertTrue(monitor.connections_snapshot()['fresh'])
+            self.assertNotIn('STM',monitor.connections_snapshot()['ids'])
+
     def test_cycle_display_cannot_remain_healthy_after_heartbeat_or_inference_loss(self):
         monitor=Monitor('camera')
         with patch('game.web.time.monotonic',return_value=10):

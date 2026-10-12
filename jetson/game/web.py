@@ -20,10 +20,29 @@ class Monitor:
         self.reset_generation = 0
         self.trial_command = dict(version=0,phase='idle',requested_at=time.monotonic())
         self.state = dict(source=source, state='preparing', error=None)
+        self.connections = None
+        self.connections_at = None
         self.cycle = None
         self.cycle_at = self.cycle_health_at = None
         self.cycle_health = False
         self.cycle_reason = 'bridge not connected'
+
+    def set_connections(self, body):
+        if (not isinstance(body, dict) or set(body) != {'ids'} or
+                not isinstance(body['ids'], list) or len(body['ids']) > 35 or
+                any(not isinstance(v, str) or not 1 <= len(v) <= 9 or
+                    any(c not in 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_' for c in v)
+                    for v in body['ids'])):
+            raise ValueError('Invalid connection list')
+        with self.condition:
+            self.connections = sorted(set(body['ids']))
+            self.connections_at = time.monotonic()
+
+    def connections_snapshot(self):
+        with self.condition:
+            age = None if self.connections_at is None else (time.monotonic()-self.connections_at)*1000
+            return dict(fresh=age is not None and age <= 6000, age_ms=age,
+                        ids=list(self.connections or []))
 
     def set_cycle(self, body):
         if not isinstance(body, dict): raise ValueError('Expected object')
@@ -156,6 +175,8 @@ def create_server(host, port, monitor, database, calibration=None, recorder=None
             try:
                 if route == '/cycle.js':
                     self.send((static/'cycle.js').read_bytes(), 'text/javascript; charset=utf-8')
+                elif route == '/api/connections':
+                    self.send(json.dumps(monitor.connections_snapshot()).encode(), 'application/json')
                 elif route == '/api/cycle':
                     self.send(json.dumps(monitor.cycle_snapshot()).encode(), 'application/json')
                 elif route in ('/', '/debug', '/app.js', '/style.css', '/calibrate', '/calibrate.js', '/validation.js','/recording.js'):
@@ -210,10 +231,10 @@ def create_server(host, port, monitor, database, calibration=None, recorder=None
                 self.send(b'Database unavailable', 'text/plain', 503)
 
         def do_POST(self):
-            if self.path not in ('/api/cycle','/api/calibration','/api/validation/reset','/api/validation/phase','/api/recording/start','/api/recording/stop') or (self.path == '/api/calibration' and calibration is None):
+            if self.path not in ('/api/connections','/api/cycle','/api/calibration','/api/validation/reset','/api/validation/phase','/api/recording/start','/api/recording/stop') or (self.path == '/api/calibration' and calibration is None):
                 self.send(b'Not found', 'text/plain', 404)
                 return
-            if self.path == '/api/cycle' and self.client_address[0] not in ('127.0.0.1','::1'):
+            if self.path in ('/api/cycle','/api/connections') and self.client_address[0] not in ('127.0.0.1','::1'):
                 self.close_connection = True
                 self.send(b'Local bridge only', 'text/plain', 403)
                 return
@@ -234,6 +255,10 @@ def create_server(host, port, monitor, database, calibration=None, recorder=None
                     raise ValueError('Invalid request length')
                 self.connection.settimeout(5)
                 body = json.loads(self.rfile.read(length))
+                if self.path == '/api/connections':
+                    monitor.set_connections(body)
+                    self.send(b'{}','application/json')
+                    return
                 if self.path == '/api/cycle':
                     monitor.set_cycle(body)
                     self.send(b'{}','application/json')

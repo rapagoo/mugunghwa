@@ -26,7 +26,7 @@ function boardStatus(id,devices){
     const date=new Date(board.last_seen_at);
     detail='최근 응답 '+(Number.isNaN(date.getTime())?'시각 확인 불가':date.toLocaleString('ko-KR',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit',second:'2-digit'}));
   }
-  deviceStatus(id,recent?'응답 확인':'현재 연결 미확인',recent?'ok':'unknown',detail);
+  deviceStatus(id,recent?'최근 응답 확인':board?.last_seen_at?'최근 응답 오래됨':'응답 기록 없음',recent?'ok':'unknown',detail);
 }
 async function get(path){
   const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),5000);
@@ -83,8 +83,22 @@ async function refreshGame(){
     rows('participants',g.participants.map((p,i)=>[p.name||(gameView?'참가자 '+(i+1):p.id),g.game?.phase==="aborted"&&p.status==="playing"?"미완료":labels[p.status]||p.status,p.status]),'경기가 시작되면 표시됩니다.');
     rows('devices',(g.devices||[]).map(d=>[d.id,d.connection_state+' · '+(d.last_ack||'—')+' · '+(d.last_seen_at||'수신 기록 없음')]),'아직 보드 상태 수집이 연결되지 않았습니다.');
     rows('events',g.events.map(e=>[`${e.kind}${e.participant_id?' · '+e.participant_id:''}`,e.occurred_at]),'아직 저장된 이벤트가 없습니다.');
-  }catch(error){deviceStatus('db','연결 확인 필요','unknown','경기 기록을 조회할 수 없습니다.');for(const id of ['stm','ard'])deviceStatus(id,'현재 연결 미확인','unknown','보드 응답 기록 조회 불가');gameConnected=false;put('game-state','게임 상태 조회 실패');put('game-meta','마지막 표시값일 수 있습니다. 서버 상태를 확인해 주세요.')}
+  }catch(error){deviceStatus('db','연결 확인 필요','unknown','경기 기록을 조회할 수 없습니다.');for(const id of ['stm','ard'])deviceStatus(id,'응답 조회 불가','unknown','보드 응답 기록 조회 불가');gameConnected=false;put('game-state','게임 상태 조회 실패');put('game-meta','마지막 표시값일 수 있습니다. 서버 상태를 확인해 주세요.')}
   finally{connection();setTimeout(refreshGame,2000)}
 }
 el('stream').addEventListener('error',()=>{el('stream').dataset.retry='1'});
 refreshVision();refreshGame();
+
+async function refreshConnections(){
+  try{
+    const data=await get('/api/connections');
+    for(const id of ['stm','ard','pi','jetson']){
+      const node=el('session-'+id);if(!node)continue;
+      const connected=data.fresh&&data.ids.includes(id.toUpperCase());
+      node.textContent=!data.fresh?'서버 접속 조회 지연':connected?(id==='ard'?'중계기 서버 접속 중':'서버 접속 중'):'서버 미접속';
+      node.dataset.state=!data.fresh?'unknown':connected?'ok':'offline';
+    }
+  }catch(error){for(const id of ['stm','ard','pi','jetson']){put('session-'+id,'서버 접속 조회 불가');if(el('session-'+id))el('session-'+id).dataset.state='unknown';}}
+  finally{setTimeout(refreshConnections,2000);}
+}
+if(gameView)refreshConnections();
